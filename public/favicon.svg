@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="nb-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#1F2937" />
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#nb-grad)" />
+  <rect x="32" y="32" width="448" height="448" rx="88" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="4" />
+  <!-- Stylized Note Book & Pen mark -->
+  <g transform="translate(100, 100)">
+    <rect x="20" y="20" width="220" height="280" rx="28" fill="#FFFFFF" opacity="0.95" />
+    <rect x="20" y="20" width="40" height="280" rx="12" fill="url(#accent-grad)" />
+    <!-- Note Lines -->
+    <rect x="80" y="70" width="130" height="14" rx="7" fill="#E5E7EB" />
+    <rect x="80" y="110" width="110" height="14" rx="7" fill="#E5E7EB" />
+    <rect x="80" y="150" width="140" height="14" rx="7" fill="#E5E7EB" />
+    <rect x="80" y="190" width="90" height="14" rx="7" fill="#E5E7EB" />
+    <!-- Lettering NB badge -->
+    <circle cx="230" cy="240" r="50" fill="#111827" />
+    <text x="230" y="254" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="34" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="-1">NB</text>
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+{
+  "name": "Note Bro",
+  "description": "A modern, high-trust notes workspace with fluid sketching, rich formatting, and smart organization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
