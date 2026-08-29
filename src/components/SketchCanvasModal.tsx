@@ -486,50 +486,49 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-60 bg-neutral-950 flex flex-col justify-between overflow-hidden animate-in fade-in duration-200 select-none">
-      {/* 1. TOP APP BAR */}
-      <div className="w-full px-3 sm:px-6 py-2.5 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800 flex items-center justify-between z-30 shrink-0 text-white">
+      {/* 1. TOP APP BAR - Compact & Responsive */}
+      <div className="w-full px-2 sm:px-5 py-2 bg-neutral-900/95 backdrop-blur-md border-b border-neutral-800 flex items-center justify-between z-30 shrink-0 text-white gap-1.5">
         {/* Left: Back & Title */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <button
             id="sketch-studio-back-btn"
             onClick={onClose}
-            className="p-2 -ml-1 rounded-full text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer flex items-center gap-1.5"
+            className="p-1.5 -ml-1 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-800 transition cursor-pointer flex items-center gap-1"
             title="Back to Note"
           >
-            <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-xs font-semibold hidden sm:inline">Back</span>
+            <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.2]" />
+            <span className="text-xs font-semibold hidden md:inline">Back</span>
           </button>
 
-          <div className="flex flex-col">
-            <span className="text-sm font-black tracking-tight text-white flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Sketch Studio
-            </span>
-            <span className="text-[10px] text-neutral-400 font-medium capitalize truncate max-w-[120px]">
-              {tool} • {brushSize}px • {paperStyle}
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-bold tracking-tight text-white truncate max-w-[90px] sm:max-w-none">
+              <span className="hidden sm:inline">Sketch Studio</span>
+              <span className="sm:hidden">Sketch</span>
             </span>
           </div>
         </div>
 
         {/* Center: Undo / Redo & Clear */}
-        <div className="flex items-center gap-1 bg-neutral-800/80 px-2 py-1 rounded-2xl border border-neutral-700/60 shadow-inner">
+        <div className="flex items-center gap-0.5 sm:gap-1 bg-neutral-800/90 px-1 sm:px-2 py-0.5 sm:py-1 rounded-xl border border-neutral-700/60 shadow-inner shrink-0">
           <button
             onClick={handleUndo}
             disabled={historyIndex <= 0}
-            className="p-1.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
+            className="p-1 sm:p-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
             title="Undo"
           >
-            <Undo2 className="w-4 h-4" />
+            <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
           <button
             onClick={handleRedo}
             disabled={historyIndex >= history.length - 1}
-            className="p-1.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
+            className="p-1 sm:p-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent transition cursor-pointer"
             title="Redo"
           >
-            <Redo2 className="w-4 h-4" />
+            <Redo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
-          <div className="w-[1px] h-4 bg-neutral-700 mx-1" />
+          <div className="w-[1px] h-3.5 sm:h-4 bg-neutral-700 mx-0.5" />
 
           {/* Paper Background Style Selector */}
           <div className="relative">
@@ -538,16 +537,16 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
                 setShowPaperMenu(!showPaperMenu);
                 setShowShapeMenu(false);
               }}
-              className={`p-1.5 rounded-xl transition cursor-pointer ${
+              className={`p-1 sm:p-1.5 rounded-lg transition cursor-pointer ${
                 showPaperMenu ? 'bg-neutral-700 text-white' : 'text-neutral-300 hover:bg-neutral-700 hover:text-white'
               }`}
               title="Paper Background Style"
             >
-              <Grid3X3 className="w-4 h-4" />
+              <Grid3X3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
 
             {showPaperMenu && (
-              <div className="absolute left-1/2 -translate-x-1/2 top-11 w-44 bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl p-2 z-40 animate-in fade-in zoom-in-95">
+              <div className="absolute left-1/2 -translate-x-1/2 top-9 sm:top-11 w-44 bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl p-2 z-40 animate-in fade-in zoom-in-95">
                 <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider px-2 py-1">
                   Paper Texture
                 </div>
@@ -582,31 +581,32 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
           {/* Download PNG */}
           <button
             onClick={handleExportPNG}
-            className="p-1.5 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer"
+            className="p-1 sm:p-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer hidden xs:flex"
             title="Download PNG to device"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
           {/* Clear Canvas */}
           <button
             onClick={handleClearCanvas}
-            className="p-1.5 rounded-xl text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
+            className="p-1 sm:p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
             title="Clear canvas"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
         {/* Right: Primary "Attach to Note" Action Button */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           <button
             id="sketch-attach-btn"
             onClick={handleSaveAndAttach}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#5B86E5] hover:bg-[#4D78DE] text-white font-bold text-xs sm:text-sm rounded-full shadow-[0_4px_16px_rgba(91,134,229,0.3)] active:scale-95 transition cursor-pointer border border-[#D4E4FA]/40"
+            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 bg-[#5B86E5] hover:bg-[#4D78DE] text-white font-bold text-xs sm:text-sm rounded-full shadow-[0_4px_16px_rgba(91,134,229,0.3)] active:scale-95 transition cursor-pointer border border-[#D4E4FA]/40 shrink-0"
           >
-            <Check className="w-4 h-4 stroke-[2.8]" />
-            <span>Attach to Note</span>
+            <Check className="w-3.5 h-3.5 stroke-[2.8]" />
+            <span className="hidden sm:inline">Attach to Note</span>
+            <span className="sm:hidden">Attach</span>
           </button>
         </div>
       </div>
@@ -627,13 +627,13 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
       </div>
 
       {/* 3. FLOATING TOOLBAR & CONTROLS AT BOTTOM */}
-      <div className="w-full bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 p-2 sm:p-3 z-30 shrink-0 flex flex-col items-center gap-2">
-        {/* Upper row: Tool Selectors */}
-        <div className="flex items-center justify-center flex-wrap gap-1 sm:gap-2">
+      <div className="w-full bg-neutral-900/95 backdrop-blur-md border-t border-neutral-800 px-2 py-2 sm:p-3 z-30 shrink-0 flex flex-col items-center gap-1.5 sm:gap-2">
+        {/* Upper row: Tool Selectors (Smooth horizontal scroll on mobile) */}
+        <div className="w-full flex items-center justify-start sm:justify-center gap-1 sm:gap-1.5 overflow-x-auto scrollbar-none px-1 py-0.5">
           {/* Pen */}
           <button
             onClick={() => setTool('pen')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
               tool === 'pen'
                 ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
                 : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -646,7 +646,7 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
           {/* Calligraphy Brush */}
           <button
             onClick={() => setTool('brush')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
               tool === 'brush'
                 ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
                 : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -659,7 +659,7 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
           {/* Highlighter */}
           <button
             onClick={() => setTool('highlighter')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
               tool === 'highlighter'
                 ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
                 : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -672,7 +672,7 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
           {/* Pencil */}
           <button
             onClick={() => setTool('pencil')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
               tool === 'pencil'
                 ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
                 : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -685,7 +685,7 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
           {/* Neon Glow Pen */}
           <button
             onClick={() => setTool('neon')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
               tool === 'neon'
                 ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
                 : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -696,13 +696,13 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
           </button>
 
           {/* Geometric Shapes Popover */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => {
                 setShowShapeMenu(!showShapeMenu);
                 setShowPaperMenu(false);
               }}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
                 isShapeTool
                   ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
                   : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -748,7 +748,7 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
           {/* Eraser */}
           <button
             onClick={() => setTool('eraser')}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
               tool === 'eraser'
                 ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
                 : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -760,9 +760,9 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
         </div>
 
         {/* Lower row: Color Swatches & Brush Sizes */}
-        <div className="w-full max-w-2xl flex items-center justify-between gap-2 overflow-x-auto px-2 py-1 scrollbar-none">
+        <div className="w-full max-w-2xl flex items-center justify-between gap-2 overflow-x-auto scrollbar-none px-1 py-0.5">
           {/* Swatches */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 overflow-x-auto scrollbar-none max-w-[60%] sm:max-w-none py-0.5">
             {COLOR_SWATCHES.map((swatch) => (
               <button
                 key={swatch.name}
@@ -771,9 +771,9 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
                   if (tool === 'eraser') setTool('pen');
                 }}
                 style={{ backgroundColor: swatch.hex }}
-                className={`w-6 h-6 rounded-full transition-transform cursor-pointer border ${
+                className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full transition-transform cursor-pointer border shrink-0 ${
                   color === swatch.hex && tool !== 'eraser'
-                    ? 'ring-2 ring-amber-400 scale-125 border-white'
+                    ? 'ring-2 ring-amber-400 scale-110 border-white'
                     : 'border-neutral-600/60 hover:scale-110'
                 }`}
                 title={swatch.name}
@@ -781,7 +781,7 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
             ))}
 
             {/* Custom Color input */}
-            <label className="relative cursor-pointer shrink-0 ml-1">
+            <label className="relative cursor-pointer shrink-0 ml-0.5">
               <input
                 type="color"
                 value={color}
@@ -789,11 +789,11 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
                   setColor(e.target.value);
                   if (tool === 'eraser') setTool('pen');
                 }}
-                className="opacity-0 w-6 h-6 absolute inset-0 cursor-pointer"
+                className="opacity-0 w-5 h-5 sm:w-6 sm:h-6 absolute inset-0 cursor-pointer"
               />
               <div
                 style={{ backgroundColor: color }}
-                className="w-6 h-6 rounded-full border-2 border-dashed border-amber-400 flex items-center justify-center text-[10px] text-white font-bold"
+                className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-dashed border-amber-400 flex items-center justify-center text-[9px] sm:text-[10px] text-white font-bold"
                 title="Custom Color"
               >
                 +
@@ -801,13 +801,13 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
             </label>
           </div>
 
-          {/* Brush Thickness Presets */}
-          <div className="flex items-center gap-1.5 shrink-0 bg-neutral-800/80 px-2 py-1 rounded-xl border border-neutral-700/50">
-            {SIZE_PRESETS.map((preset) => (
+          {/* Brush Thickness Controls */}
+          <div className="flex items-center gap-1 shrink-0 bg-neutral-800/80 px-1.5 sm:px-2 py-1 rounded-xl border border-neutral-700/50">
+            {SIZE_PRESETS.slice(0, 3).map((preset) => (
               <button
                 key={preset.label}
                 onClick={() => setBrushSize(preset.size)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-0.5 rounded-lg text-[9px] sm:text-[10px] font-bold transition cursor-pointer ${
                   brushSize === preset.size
                     ? 'bg-amber-400 text-black'
                     : 'text-neutral-400 hover:text-white'
@@ -824,7 +824,7 @@ export const SketchCanvasModal: React.FC<SketchCanvasModalProps> = ({
               max="40"
               value={brushSize}
               onChange={(e) => setBrushSize(Number(e.target.value))}
-              className="w-16 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-amber-400"
+              className="w-12 sm:w-16 h-1 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-amber-400"
               title={`Size: ${brushSize}px`}
             />
           </div>

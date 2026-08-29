@@ -805,9 +805,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             )}
           </div>
 
-          {/* Student Subject Picker (If in Student Mode) */}
+          {/* Student Subject Picker (Desktop only; on mobile accessed via More Options menu) */}
           {noteMode === 'student' && (
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 hidden sm:block">
               <button
                 onClick={() => {
                   setShowSubjectPicker(!showSubjectPicker);
@@ -973,9 +973,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             )}
           </div>
 
-          {/* Project Assignment (if projects exist) */}
+          {/* Project Assignment (Desktop only; on mobile accessed via More Options menu) */}
           {projects && projects.length > 0 && (
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 hidden sm:block">
               <button
                 onClick={() => {
                   setShowProjectPicker(!showProjectPicker);
@@ -1220,10 +1220,10 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             )}
           </button>
 
-          {/* Pin Button */}
+          {/* Pin Button (Desktop only; on mobile accessed via More Options menu) */}
           <button
             onClick={() => setIsPinned(!isPinned)}
-            className={`p-1.5 rounded-lg transition cursor-pointer border shrink-0 ${
+            className={`p-1.5 rounded-lg transition cursor-pointer border shrink-0 hidden sm:flex ${
               isPinned
                 ? 'bg-amber-50 border-amber-200 text-amber-700'
                 : 'bg-white border-neutral-200 text-neutral-500 hover:text-neutral-800'
@@ -1245,9 +1245,28 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
             {showMoreMenu && (
               <div
-                className="absolute right-0 top-9 w-48 bg-white border border-neutral-200 rounded-xl shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95"
+                className="absolute right-0 top-9 w-52 bg-white border border-neutral-200 rounded-xl shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95"
                 onClick={() => setShowMoreMenu(false)}
               >
+                {/* Pin / Unpin Note Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPinned(!isPinned);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-amber-500 text-amber-600' : 'text-neutral-500'}`} />
+                    <span>{isPinned ? 'Unpin Note' : 'Pin to Top'}</span>
+                  </div>
+                  <span className="text-[10px] text-neutral-400 font-normal">
+                    {isPinned ? 'Pinned' : 'Off'}
+                  </span>
+                </button>
+
+                {/* Category Selection */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1264,6 +1283,49 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                     {currentFolder ? currentFolder.name : 'None'}
                   </span>
                 </button>
+
+                {/* Academic Subject (Student Mode) */}
+                {noteMode === 'student' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSubjectPicker(true);
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center justify-between gap-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Subject</span>
+                    </div>
+                    <span className="text-[11px] text-blue-700 font-normal truncate max-w-[80px] bg-blue-50 px-1.5 py-0.5 rounded">
+                      {studentSubject || 'General'}
+                    </span>
+                  </button>
+                )}
+
+                {/* Project Assignment */}
+                {projects && projects.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProjectPicker(true);
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center justify-between gap-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>Project</span>
+                    </div>
+                    <span className="text-[11px] text-neutral-600 font-normal truncate max-w-[80px] bg-neutral-100 px-1.5 py-0.5 rounded">
+                      {currentProject ? currentProject.name || currentProject.title : 'None'}
+                    </span>
+                  </button>
+                )}
+
+                <div className="border-t border-neutral-100 my-1" />
+
                 <button
                   type="button"
                   onClick={() => setShowTagPicker(!showTagPicker)}
@@ -1741,6 +1803,154 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 Add
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Subject Selection Modal (Triggered via ⋮ Options on mobile) */}
+      {showSubjectPicker && (
+        <div
+          className="fixed inset-0 z-60 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 sm:hidden animate-in fade-in duration-150"
+          onClick={() => setShowSubjectPicker(false)}
+        >
+          <div
+            className="w-full max-w-xs bg-white rounded-2xl shadow-2xl p-4 border border-neutral-200 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100 mb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-blue-600" />
+                <h3 className="text-sm font-semibold text-neutral-900">Academic Subject</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSubjectPicker(false)}
+                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-52 overflow-y-auto space-y-1 my-1 pr-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setStudentSubject('');
+                  setShowSubjectPicker(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition ${
+                  !studentSubject ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700 bg-neutral-50'
+                }`}
+              >
+                <span>None / General</span>
+                {!studentSubject && <Check className="w-4 h-4" />}
+              </button>
+              {STUDENT_SUBJECTS.map((subj) => (
+                <button
+                  key={subj}
+                  type="button"
+                  onClick={() => {
+                    setStudentSubject(subj);
+                    setShowSubjectPicker(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition ${
+                    studentSubject === subj ? 'bg-blue-600 text-white' : 'hover:bg-neutral-100 text-neutral-700 bg-neutral-50'
+                  }`}
+                >
+                  <span className="truncate">{subj}</span>
+                  {studentSubject === subj && <Check className="w-4 h-4" />}
+                </button>
+              ))}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (customSubjectInput.trim()) {
+                  setStudentSubject(customSubjectInput.trim());
+                  setCustomSubjectInput('');
+                  setShowSubjectPicker(false);
+                }
+              }}
+              className="mt-3 pt-3 border-t border-neutral-100 flex items-center gap-1.5"
+            >
+              <input
+                type="text"
+                value={customSubjectInput}
+                onChange={(e) => setCustomSubjectInput(e.target.value)}
+                placeholder="Custom subject..."
+                className="flex-1 px-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs outline-none focus:border-neutral-900"
+              />
+              <button
+                type="submit"
+                disabled={!customSubjectInput.trim()}
+                className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-neutral-800 transition shrink-0 cursor-pointer"
+              >
+                Set
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Project Selection Modal (Triggered via ⋮ Options on mobile) */}
+      {showProjectPicker && projects && (
+        <div
+          className="fixed inset-0 z-60 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 sm:hidden animate-in fade-in duration-150"
+          onClick={() => setShowProjectPicker(false)}
+        >
+          <div
+            className="w-full max-w-xs bg-white rounded-2xl shadow-2xl p-4 border border-neutral-200 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100 mb-3">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-neutral-600" />
+                <h3 className="text-sm font-semibold text-neutral-900">Assign Project</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProjectPicker(false)}
+                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-52 overflow-y-auto space-y-1 my-1 pr-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectId(undefined);
+                  setShowProjectPicker(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition ${
+                  !projectId ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700 bg-neutral-50'
+                }`}
+              >
+                <span>Standalone (No Project)</span>
+                {!projectId && <Check className="w-4 h-4" />}
+              </button>
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    setProjectId(p.id);
+                    setShowProjectPicker(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition ${
+                    projectId === p.id ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700 bg-neutral-50'
+                  }`}
+                >
+                  <span className="truncate flex items-center gap-1.5">
+                    <span>{p.icon || '📁'}</span>
+                    <span>{p.name || p.title}</span>
+                  </span>
+                  {projectId === p.id && <Check className="w-4 h-4" />}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
