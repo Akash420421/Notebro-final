@@ -1222,20 +1222,22 @@ export default function App() {
           />
         )}
 
-        {/* Bottom Navigation Bar — Fixed at bottom across all views */}
-        <footer className="fixed bottom-0 left-0 right-0 z-30 w-full flex justify-center pointer-events-none">
-          <div className="w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl pointer-events-auto">
-            <BottomNav
-              activeTab={activeTab}
-              onTabChange={(tab) => {
-                setSelectedProject(null);
-                setActiveTab(tab);
-              }}
-              notesCount={activeNotes.length}
-              projectsCount={projects.length}
-            />
-          </div>
-        </footer>
+        {/* Bottom Navigation Bar — Fixed at bottom across all views (hidden when note editor is open) */}
+        {!editingNote && !isCreatingNewNote && (
+          <footer className="fixed bottom-0 left-0 right-0 z-30 w-full flex justify-center pointer-events-none">
+            <div className="w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl pointer-events-auto">
+              <BottomNav
+                activeTab={activeTab}
+                onTabChange={(tab) => {
+                  setSelectedProject(null);
+                  setActiveTab(tab);
+                }}
+                notesCount={activeNotes.length}
+                projectsCount={projects.length}
+              />
+            </div>
+          </footer>
+        )}
       </div>
 
       {/* New Project Creation Modal */}

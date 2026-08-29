@@ -686,11 +686,14 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
   return (
     <div
-      className="fixed left-0 right-0 z-50 bg-white flex flex-col justify-between overflow-hidden animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 bg-white flex flex-col justify-between overflow-hidden animate-in fade-in duration-150 w-full h-[100dvh]"
       style={{
-        top: `${viewportTop}px`,
-        height: viewportHeight > 0 ? `${viewportHeight}px` : '100dvh',
-        maxHeight: viewportHeight > 0 ? `${viewportHeight}px` : '100dvh',
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '100dvh',
+        maxHeight: '100dvh',
       }}
     >
       {/* Hidden File Input for Image Uploads */}
