@@ -33,6 +33,7 @@ import { supabase, signOutUser } from '../services/supabase';
 import { syncManager, SyncManagerStatus } from '../services/syncManager';
 import { fileBackupService } from '../services/fileBackupService';
 import { adminService } from '../services/adminService';
+import { dbService } from '../services/db';
 
 interface ProfileViewProps {
   notes?: NoteItem[];
@@ -42,6 +43,7 @@ interface ProfileViewProps {
   selectedMode?: AppMode | 'all';
   onSelectMode?: (mode: AppMode | 'all') => void;
   onImportData?: (notes: NoteItem[]) => void;
+  onUserLoggedOut?: () => void;
   onOpenAuthModal?: () => void;
   onOpenNotesFileModal?: () => void;
   onOpenTrashModal?: () => void;
@@ -58,6 +60,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   selectedMode = 'normal',
   onSelectMode,
   onImportData,
+  onUserLoggedOut,
   onOpenAuthModal,
   onOpenNotesFileModal,
   onOpenTrashModal,
@@ -462,6 +465,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           await syncManager.flushPendingSync();
         } catch (e) {}
         await signOutUser();
+        try {
+          await dbService.clearAllData();
+        } catch (e) {}
         setCustomName('');
         setCustomPhotoURL('');
         setCustomBio('');
@@ -469,7 +475,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           localStorage.removeItem('projectnotes_custom_display_name');
           localStorage.removeItem('projectnotes_custom_photo_url');
           localStorage.removeItem('projectnotes_custom_bio');
+          localStorage.removeItem('project_notes_cache');
+          localStorage.removeItem('projects_cache');
+          localStorage.removeItem('folders_cache');
         } catch (e) {}
+        if (onUserLoggedOut) {
+          onUserLoggedOut();
+        }
         showToast('Signed out successfully.', 'info');
       } catch (e: any) {
         showToast(`Error signing out: ${e.message}`, 'error');

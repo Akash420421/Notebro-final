@@ -55,9 +55,12 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   onTagClick,
   onLongPress,
 }) => {
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
   const [isSwiping, setIsSwiping] = useState(false);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isVerticalScrollRef = useRef(false);
+  const hasSwipedRef = useRef(false);
+  const didLongPressRef = useRef(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Format date
@@ -112,37 +115,63 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     return 'Untitled note';
   };
 
-  // Touch & swipe handling
+  // Touch & swipe handling with strict vertical scroll disambiguation
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isMultiSelectMode) return;
-    setTouchStartX(e.touches[0].clientX);
+    const touch = e.touches[0];
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    isVerticalScrollRef.current = false;
+    hasSwipedRef.current = false;
+    didLongPressRef.current = false;
     setIsSwiping(false);
 
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+
     longPressTimerRef.current = setTimeout(() => {
-      if (onLongPress) {
+      // Trigger long-press selection only if user held completely still
+      if (!isVerticalScrollRef.current && !hasSwipedRef.current && onLongPress) {
+        didLongPressRef.current = true;
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
           try {
-            navigator.vibrate(30);
-          } catch (e) {}
+            navigator.vibrate(35);
+          } catch (_) {}
         }
         onLongPress(note);
       }
-    }, 450);
+    }, 550);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartX === null || isMultiSelectMode) return;
+    if (!touchStartPosRef.current || isMultiSelectMode) return;
     const currentX = e.touches[0].clientX;
-    const diffX = currentX - touchStartX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartPosRef.current.x;
+    const diffY = currentY - touchStartPosRef.current.y;
 
-    if (Math.abs(diffX) > 10 && longPressTimerRef.current) {
+    const absX = Math.abs(diffX);
+    const absY = Math.abs(diffY);
+
+    // Cancel long-press timer immediately on ANY movement (> 6px)
+    if ((absX > 6 || absY > 6) && longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
 
-    if (diffX > -100 && diffX < 100) {
-      setSwipeOffset(diffX);
+    // Detect if this is vertical page scrolling
+    if (!isSwiping && absY > 8 && absY > absX) {
+      isVerticalScrollRef.current = true;
+      return;
+    }
+
+    // Allow horizontal swipe ONLY if movement is clearly horizontal and NOT a vertical scroll
+    if (!isVerticalScrollRef.current && absX > 25 && absX > absY * 2) {
+      hasSwipedRef.current = true;
       setIsSwiping(true);
+      // Add natural elastic resistance
+      const clampedOffset = Math.sign(diffX) * Math.min(100, Math.pow(absX, 0.9));
+      setSwipeOffset(clampedOffset);
     }
   };
 
@@ -152,24 +181,46 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       longPressTimerRef.current = null;
     }
 
-    if (swipeOffset > 60) {
-      onTogglePin(note.id);
-    } else if (swipeOffset < -60 && onToggleArchive) {
-      onToggleArchive(note.id);
+    // Require deliberate swipe distance >= 85px to prevent accidental triggers
+    if (isSwiping && !isVerticalScrollRef.current) {
+      if (swipeOffset >= 85) {
+        onTogglePin(note.id);
+      } else if (swipeOffset <= -85 && onToggleArchive) {
+        onToggleArchive(note.id);
+      }
     }
 
     setSwipeOffset(0);
     setIsSwiping(false);
-    setTouchStartX(null);
+    touchStartPosRef.current = null;
+    isVerticalScrollRef.current = false;
+    setTimeout(() => {
+      hasSwipedRef.current = false;
+    }, 100);
+  };
+
+  const handleTouchCancel = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    setSwipeOffset(0);
+    setIsSwiping(false);
+    touchStartPosRef.current = null;
+    isVerticalScrollRef.current = false;
+    hasSwipedRef.current = false;
+    didLongPressRef.current = false;
   };
 
   const handleMouseDown = () => {
     if (isMultiSelectMode) return;
+    didLongPressRef.current = false;
     longPressTimerRef.current = setTimeout(() => {
       if (onLongPress) {
+        didLongPressRef.current = true;
         onLongPress(note);
       }
-    }, 500);
+    }, 600);
   };
 
   const handleMouseUp = () => {
@@ -180,6 +231,13 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    // If long press or swipe just happened, do not trigger standard card click
+    if (didLongPressRef.current || hasSwipedRef.current) {
+      didLongPressRef.current = false;
+      hasSwipedRef.current = false;
+      return;
+    }
+
     if (isMultiSelectMode) {
       e.stopPropagation();
       onToggleSelect(note.id);
@@ -335,6 +393,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onContextMenu={handleContextMenu}

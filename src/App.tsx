@@ -200,14 +200,48 @@ export default function App() {
     };
   }, []);
 
+  const lastAuthUidRef = useRef<string | null | undefined>(undefined);
+
   // Listen to Auth state & Cloud Sync
   useEffect(() => {
-    const unsubscribe = subscribeToAuth((user) => {
+    const unsubscribe = subscribeToAuth(async (user) => {
+      const prevUid = lastAuthUidRef.current;
+      const currentUid = user?.uid || null;
+      lastAuthUidRef.current = currentUid;
+
       setCurrentUser(user);
+
       if (user) {
         if (user.photoURL) setCustomAvatar(user.photoURL);
         if (user.displayName) setCustomName(user.displayName);
+
+        // If user changed accounts (from previous user to another user)
+        if (prevUid !== undefined && prevUid !== null && prevUid !== currentUid) {
+          await dbService.clearAllData();
+          setNotes([]);
+          setFolders([]);
+          setProjects(INITIAL_PROJECTS);
+        }
+      } else {
+        // User logged out / signed out
+        if (prevUid !== undefined && prevUid !== null) {
+          await dbService.clearAllData();
+          setNotes([]);
+          setFolders([]);
+          setProjects(INITIAL_PROJECTS);
+          setCustomAvatar('');
+          setCustomName('');
+          try {
+            localStorage.removeItem('project_notes_cache');
+            localStorage.removeItem('projects_cache');
+            localStorage.removeItem('folders_cache');
+            localStorage.removeItem('projectnotes_custom_display_name');
+            localStorage.removeItem('projectnotes_custom_photo_url');
+            localStorage.removeItem('projectnotes_custom_bio');
+          } catch (_) {}
+        }
       }
+
       firestoreSyncService.attachUser(
         user,
         async (remoteNotes) => {
@@ -1138,6 +1172,11 @@ export default function App() {
                   selectedMode={selectedMode}
                   onSelectMode={setSelectedMode}
                   onImportData={handleImportNotesPackage}
+                  onUserLoggedOut={() => {
+                    setNotes([]);
+                    setFolders([]);
+                    setProjects(INITIAL_PROJECTS);
+                  }}
                   onOpenAuthModal={() => setIsAuthModalOpen(true)}
                   onOpenNotesFileModal={() => setIsNotesFileModalOpen(true)}
                   onOpenTrashModal={() => setIsTrashModalOpen(true)}
