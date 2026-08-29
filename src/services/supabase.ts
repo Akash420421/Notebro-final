@@ -507,6 +507,21 @@ class SupabaseAuthService {
       lastLoginAt: nowIso,
     };
 
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(
+          `notebro_user_cred_${userId}`,
+          JSON.stringify({
+            uid: userId,
+            email: cleanEmail,
+            pass_hash: passHash,
+            salt: salt,
+            createdAt: nowIso,
+          })
+        );
+      } catch (e) {}
+    }
+
     // Save user table in Supabase if table exists
     try {
       await supabase.from('users').upsert({
@@ -593,7 +608,25 @@ class SupabaseAuthService {
       if (e.message && e.message.includes('Incorrect password')) throw e;
     }
 
-    // 3. Resilient user session login
+    // 3. Check local credential store if offline
+    if (typeof window !== 'undefined') {
+      try {
+        const localCredRaw = localStorage.getItem(`notebro_user_cred_${userId}`);
+        if (localCredRaw) {
+          const localCred = JSON.parse(localCredRaw);
+          if (localCred.pass_hash && localCred.salt) {
+            const testHash = await computeHash(cleanPass, localCred.salt);
+            if (testHash !== localCred.pass_hash) {
+              throw new Error('Incorrect password. Please verify your credentials.');
+            }
+          }
+        }
+      } catch (e: any) {
+        if (e.message && e.message.includes('Incorrect password')) throw e;
+      }
+    }
+
+    // 4. Resilient user session login
     const fallbackUser: AuthUser = {
       uid: userId,
       email: cleanEmail,

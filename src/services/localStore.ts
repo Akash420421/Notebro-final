@@ -25,7 +25,31 @@ class NoteBroDexieDB extends Dexie {
       conflictCopies: 'id, originalNoteId, savedAt',
       appSettings: 'key, updatedAt',
     });
+
+    // Version 2: Multi-user partitioning and indexing
+    this.version(2).stores({
+      notes: 'id, userId, user_id, updatedAt, isDeleted, folderId, syncStatus, mode, createdAt',
+      folders: 'id, userId, user_id, createdAt, name',
+      projects: 'id, userId, user_id, updatedAt, mode',
+      conflictCopies: 'id, userId, originalNoteId, savedAt',
+      appSettings: 'key, updatedAt',
+    });
   }
+}
+
+export interface UserVaultData {
+  userId: string;
+  notes: NoteItem[];
+  folders: FolderItem[];
+  projects: ProjectItem[];
+  studentDoubtSessions?: any[];
+  developerSessions?: any[];
+  profile?: {
+    displayName?: string;
+    photoURL?: string;
+    bio?: string;
+  };
+  lastSavedAt: number;
 }
 
 class LocalStoreService {
@@ -63,6 +87,51 @@ class LocalStoreService {
         fn({ message, details });
       } catch (e) {}
     });
+  }
+
+  // ==========================================
+  // USER VAULT ISOLATION ENGINE
+  // ==========================================
+
+  public getUserVault(userId: string): UserVaultData | null {
+    if (!userId) return null;
+    try {
+      const raw = localStorage.getItem(`notebro_user_vault_${userId}`);
+      if (!raw) return null;
+      return JSON.parse(raw) as UserVaultData;
+    } catch {
+      return null;
+    }
+  }
+
+  public saveUserVault(userId: string, partial: Partial<UserVaultData>): void {
+    if (!userId) return;
+    try {
+      const existing = this.getUserVault(userId) || {
+        userId,
+        notes: [],
+        folders: DEFAULT_FOLDERS,
+        projects: [],
+        studentDoubtSessions: [],
+        developerSessions: [],
+        lastSavedAt: Date.now(),
+      };
+
+      const merged: UserVaultData = {
+        userId,
+        notes: partial.notes !== undefined ? partial.notes : existing.notes,
+        folders: partial.folders !== undefined ? partial.folders : existing.folders,
+        projects: partial.projects !== undefined ? partial.projects : existing.projects,
+        studentDoubtSessions: partial.studentDoubtSessions !== undefined ? partial.studentDoubtSessions : existing.studentDoubtSessions,
+        developerSessions: partial.developerSessions !== undefined ? partial.developerSessions : existing.developerSessions,
+        profile: partial.profile !== undefined ? { ...existing.profile, ...partial.profile } : existing.profile,
+        lastSavedAt: Date.now(),
+      };
+
+      localStorage.setItem(`notebro_user_vault_${userId}`, JSON.stringify(merged));
+    } catch (e) {
+      console.warn('Could not save user vault to localStorage:', e);
+    }
   }
 
   /**
@@ -128,19 +197,57 @@ class LocalStoreService {
   }
 
   // ==========================================
-  // NOTES OPERATIONS (Atomic ReadWrite Dexie)
+  // NOTES OPERATIONS (Atomic ReadWrite Dexie + User Partitioning)
   // ==========================================
 
-  public async getAllNotes(): Promise<NoteItem[]> {
+  public async getAllNotes(userId?: string): Promise<NoteItem[]> {
     try {
-      const notes = await this.db.notes.toArray();
-      // Fallback cache mirror in localStorage as second redundancy layer
+      let notes: NoteItem[] = [];
+
+      if (userId) {
+        // 1. Get from user vault immediately (0ms fast path)
+        const vault = this.getUserVault(userId);
+        const vaultNotes = vault?.notes || [];
+
+        // 2. Query Dexie indexed records for this user
+        let dexieNotes: NoteItem[] = [];
+        try {
+          dexieNotes = await this.db.notes
+            .filter((n) => n.userId === userId || n.user_id === userId)
+            .toArray();
+        } catch {
+          dexieNotes = [];
+        }
+
+        // 3. Merge by ID with highest updatedAt winning
+        const map = new Map<string, NoteItem>();
+        vaultNotes.forEach((n) => map.set(n.id, n));
+        dexieNotes.forEach((n) => {
+          const existing = map.get(n.id);
+          if (!existing || (n.updatedAt || 0) >= (existing.updatedAt || 0)) {
+            map.set(n.id, { ...n, userId, user_id: userId });
+          }
+        });
+
+        notes = Array.from(map.values());
+        // Update user vault mirror
+        this.saveUserVault(userId, { notes });
+      } else {
+        notes = await this.db.notes.toArray();
+      }
+
+      // Fallback cache mirror in localStorage as secondary redundancy layer
       try {
         localStorage.setItem('project_notes_cache', JSON.stringify(notes));
       } catch (e) {}
+
       return notes.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     } catch (e) {
       this.notifyError('Failed to read notes from local database. Loading from backup cache.', e);
+      if (userId) {
+        const vault = this.getUserVault(userId);
+        if (vault?.notes) return vault.notes;
+      }
       try {
         const local = localStorage.getItem('project_notes_cache');
         return local ? JSON.parse(local) : [];
@@ -165,8 +272,11 @@ class LocalStoreService {
    */
   public async saveNote(note: NoteItem): Promise<void> {
     try {
+      const targetUid = note.userId || note.user_id;
       const cleanNote: NoteItem = {
         ...note,
+        userId: targetUid,
+        user_id: targetUid,
         updatedAt: note.updatedAt || Date.now(),
         syncStatus: note.syncStatus || 'pending',
       };
@@ -174,6 +284,19 @@ class LocalStoreService {
       await this.db.transaction('rw', this.db.notes, async () => {
         await this.db.notes.put(cleanNote);
       });
+
+      // Update user vault if userId exists
+      if (targetUid) {
+        const vault = this.getUserVault(targetUid);
+        const vaultNotes = vault?.notes ? [...vault.notes] : [];
+        const idx = vaultNotes.findIndex((n) => n.id === cleanNote.id);
+        if (idx >= 0) {
+          vaultNotes[idx] = cleanNote;
+        } else {
+          vaultNotes.unshift(cleanNote);
+        }
+        this.saveUserVault(targetUid, { notes: vaultNotes });
+      }
 
       // Update backup mirror
       try {
@@ -193,12 +316,26 @@ class LocalStoreService {
     }
   }
 
-  public async bulkSaveNotes(notesList: NoteItem[]): Promise<void> {
+  public async bulkSaveNotes(notesList: NoteItem[], userId?: string): Promise<void> {
     if (!notesList || notesList.length === 0) return;
     try {
-      await this.db.transaction('rw', this.db.notes, async () => {
-        await this.db.notes.bulkPut(notesList);
+      const cleanList = notesList.map((n) => {
+        const uid = n.userId || n.user_id || userId;
+        return { ...n, userId: uid, user_id: uid };
       });
+
+      await this.db.transaction('rw', this.db.notes, async () => {
+        await this.db.notes.bulkPut(cleanList);
+      });
+
+      const targetUid = userId || notesList[0]?.userId || notesList[0]?.user_id;
+      if (targetUid) {
+        const vault = this.getUserVault(targetUid);
+        const map = new Map<string, NoteItem>();
+        (vault?.notes || []).forEach((n) => map.set(n.id, n));
+        cleanList.forEach((n) => map.set(n.id, n));
+        this.saveUserVault(targetUid, { notes: Array.from(map.values()) });
+      }
     } catch (e) {
       this.notifyError('Bulk save notes failed', e);
       throw e;
@@ -221,9 +358,7 @@ class LocalStoreService {
         syncStatus: 'pending',
       };
 
-      await this.db.transaction('rw', this.db.notes, async () => {
-        await this.db.notes.put(trashed);
-      });
+      await this.saveNote(trashed);
     } catch (e) {
       this.notifyError('Failed to move note to trash', e);
     }
@@ -242,9 +377,7 @@ class LocalStoreService {
         syncStatus: 'pending',
       };
 
-      await this.db.transaction('rw', this.db.notes, async () => {
-        await this.db.notes.put(restored);
-      });
+      await this.saveNote(restored);
     } catch (e) {
       this.notifyError('Failed to restore note', e);
     }
@@ -252,9 +385,19 @@ class LocalStoreService {
 
   public async permanentDeleteNote(id: string): Promise<void> {
     try {
+      const existing = await this.db.notes.get(id);
       await this.db.transaction('rw', this.db.notes, async () => {
         await this.db.notes.delete(id);
       });
+
+      const targetUid = existing?.userId || existing?.user_id;
+      if (targetUid) {
+        const vault = this.getUserVault(targetUid);
+        if (vault?.notes) {
+          const filtered = vault.notes.filter((n) => n.id !== id);
+          this.saveUserVault(targetUid, { notes: filtered });
+        }
+      }
     } catch (e) {
       this.notifyError('Failed to permanently delete note', e);
     }
@@ -281,8 +424,33 @@ class LocalStoreService {
   // FOLDERS & PROJECTS OPERATIONS
   // ==========================================
 
-  public async getAllFolders(): Promise<FolderItem[]> {
+  public async getAllFolders(userId?: string): Promise<FolderItem[]> {
     try {
+      if (userId) {
+        const vault = this.getUserVault(userId);
+        const vaultFolders = vault?.folders || [];
+
+        let dexieFolders: FolderItem[] = [];
+        try {
+          dexieFolders = await this.db.folders
+            .filter((f) => f.userId === userId || f.user_id === userId)
+            .toArray();
+        } catch {
+          dexieFolders = [];
+        }
+
+        const map = new Map<string, FolderItem>();
+        vaultFolders.forEach((f) => map.set(f.id, f));
+        dexieFolders.forEach((f) => map.set(f.id, { ...f, userId, user_id: userId }));
+
+        const list = Array.from(map.values());
+        if (list.length > 0) {
+          this.saveUserVault(userId, { folders: list });
+          return list;
+        }
+        return DEFAULT_FOLDERS;
+      }
+
       const folders = await this.db.folders.toArray();
       if (folders.length === 0) {
         await this.db.folders.bulkPut(DEFAULT_FOLDERS);
@@ -296,7 +464,22 @@ class LocalStoreService {
 
   public async saveFolder(folder: FolderItem): Promise<void> {
     try {
-      await this.db.folders.put(folder);
+      const targetUid = folder.userId || folder.user_id;
+      const cleanFolder: FolderItem = {
+        ...folder,
+        userId: targetUid,
+        user_id: targetUid,
+      };
+
+      await this.db.folders.put(cleanFolder);
+      if (targetUid) {
+        const vault = this.getUserVault(targetUid);
+        const list = vault?.folders ? [...vault.folders] : [...DEFAULT_FOLDERS];
+        const idx = list.findIndex((f) => f.id === cleanFolder.id);
+        if (idx >= 0) list[idx] = cleanFolder;
+        else list.push(cleanFolder);
+        this.saveUserVault(targetUid, { folders: list });
+      }
     } catch (e) {
       this.notifyError('Failed to save folder', e);
     }
@@ -304,6 +487,7 @@ class LocalStoreService {
 
   public async deleteFolder(folderId: string): Promise<void> {
     try {
+      const folder = await this.db.folders.get(folderId);
       await this.db.transaction('rw', [this.db.folders, this.db.notes], async () => {
         await this.db.folders.delete(folderId);
         // Move notes inside to uncategorized
@@ -312,13 +496,44 @@ class LocalStoreService {
           await this.db.notes.put({ ...note, folderId: undefined, updatedAt: Date.now(), syncStatus: 'pending' });
         }
       });
+
+      const targetUid = folder?.userId || folder?.user_id;
+      if (targetUid) {
+        const vault = this.getUserVault(targetUid);
+        if (vault?.folders) {
+          const list = vault.folders.filter((f) => f.id !== folderId);
+          this.saveUserVault(targetUid, { folders: list });
+        }
+      }
     } catch (e) {
       this.notifyError('Failed to delete folder', e);
     }
   }
 
-  public async getAllProjects(): Promise<ProjectItem[]> {
+  public async getAllProjects(userId?: string): Promise<ProjectItem[]> {
     try {
+      if (userId) {
+        const vault = this.getUserVault(userId);
+        const vaultProjects = vault?.projects || [];
+
+        let dexieProjects: ProjectItem[] = [];
+        try {
+          dexieProjects = await this.db.projects
+            .filter((p) => p.userId === userId || p.user_id === userId)
+            .toArray();
+        } catch {
+          dexieProjects = [];
+        }
+
+        const map = new Map<string, ProjectItem>();
+        vaultProjects.forEach((p) => map.set(p.id, p));
+        dexieProjects.forEach((p) => map.set(p.id, { ...p, userId, user_id: userId }));
+
+        const list = Array.from(map.values());
+        this.saveUserVault(userId, { projects: list });
+        return list;
+      }
+
       const projects = await this.db.projects.toArray();
       try {
         localStorage.setItem('projects_cache', JSON.stringify(projects));
@@ -336,7 +551,22 @@ class LocalStoreService {
 
   public async saveProject(project: ProjectItem): Promise<void> {
     try {
-      await this.db.projects.put(project);
+      const targetUid = project.userId || project.user_id;
+      const cleanProject: ProjectItem = {
+        ...project,
+        userId: targetUid,
+        user_id: targetUid,
+      };
+
+      await this.db.projects.put(cleanProject);
+      if (targetUid) {
+        const vault = this.getUserVault(targetUid);
+        const list = vault?.projects ? [...vault.projects] : [];
+        const idx = list.findIndex((p) => p.id === cleanProject.id);
+        if (idx >= 0) list[idx] = cleanProject;
+        else list.push(cleanProject);
+        this.saveUserVault(targetUid, { projects: list });
+      }
     } catch (e) {
       this.notifyError('Failed to save project', e);
     }
@@ -344,7 +574,17 @@ class LocalStoreService {
 
   public async deleteProject(projectId: string): Promise<void> {
     try {
+      const project = await this.db.projects.get(projectId);
       await this.db.projects.delete(projectId);
+
+      const targetUid = project?.userId || project?.user_id;
+      if (targetUid) {
+        const vault = this.getUserVault(targetUid);
+        if (vault?.projects) {
+          const list = vault.projects.filter((p) => p.id !== projectId);
+          this.saveUserVault(targetUid, { projects: list });
+        }
+      }
     } catch (e) {
       this.notifyError('Failed to delete project', e);
     }
@@ -374,16 +614,17 @@ class LocalStoreService {
   // RISK 2: EXPORT & IMPORT ZERO-DATA-LOSS BACKUP
   // ==========================================
 
-  public async exportAllDataAsJSON(): Promise<string> {
-    const allNotes = await this.getAllNotes();
-    const allFolders = await this.getAllFolders();
-    const allProjects = await this.getAllProjects();
+  public async exportAllDataAsJSON(userId?: string): Promise<string> {
+    const allNotes = await this.getAllNotes(userId);
+    const allFolders = await this.getAllFolders(userId);
+    const allProjects = await this.getAllProjects(userId);
 
     const backupPayload = {
       app: 'Note Bro',
       version: '2.0.0',
       exportedAt: new Date().toISOString(),
       timestamp: Date.now(),
+      userId: userId || 'local',
       notesCount: allNotes.length,
       foldersCount: allFolders.length,
       projectsCount: allProjects.length,
@@ -397,8 +638,8 @@ class LocalStoreService {
     return JSON.stringify(backupPayload, null, 2);
   }
 
-  public async triggerFileDownloadBackup(): Promise<void> {
-    const jsonStr = await this.exportAllDataAsJSON();
+  public async triggerFileDownloadBackup(userId?: string): Promise<void> {
+    const jsonStr = await this.exportAllDataAsJSON(userId);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -413,7 +654,8 @@ class LocalStoreService {
 
   public async importDataFromJSON(
     jsonString: string,
-    strategy: 'merge' | 'replace' = 'merge'
+    strategy: 'merge' | 'replace' = 'merge',
+    userId?: string
   ): Promise<{ notesImported: number; foldersImported: number; projectsImported: number }> {
     try {
       const parsed = JSON.parse(jsonString);
@@ -427,27 +669,50 @@ class LocalStoreService {
 
       await this.db.transaction('rw', [this.db.notes, this.db.folders, this.db.projects], async () => {
         if (strategy === 'replace') {
-          await this.db.notes.clear();
-          await this.db.folders.clear();
-          await this.db.projects.clear();
+          if (userId) {
+            await this.db.notes.filter((n) => n.userId === userId || n.user_id === userId).delete();
+          } else {
+            await this.db.notes.clear();
+            await this.db.folders.clear();
+            await this.db.projects.clear();
+          }
         }
 
         for (const n of incomingNotes) {
-          await this.db.notes.put({
+          const cleanN = {
             ...n,
-            syncStatus: 'pending', // Mark pending so it uploads to Supabase
+            userId: userId || n.userId,
+            user_id: userId || n.user_id,
+            syncStatus: 'pending' as const,
             updatedAt: n.updatedAt || Date.now(),
-          });
+          };
+          await this.db.notes.put(cleanN);
         }
 
         for (const f of incomingFolders) {
-          await this.db.folders.put(f);
+          await this.db.folders.put({
+            ...f,
+            userId: userId || f.userId,
+            user_id: userId || f.user_id,
+          });
         }
 
         for (const p of incomingProjects) {
-          await this.db.projects.put(p);
+          await this.db.projects.put({
+            ...p,
+            userId: userId || p.userId,
+            user_id: userId || p.user_id,
+          });
         }
       });
+
+      if (userId) {
+        this.saveUserVault(userId, {
+          notes: incomingNotes.map((n) => ({ ...n, userId, user_id: userId })),
+          folders: incomingFolders.map((f) => ({ ...f, userId, user_id: userId })),
+          projects: incomingProjects.map((p) => ({ ...p, userId, user_id: userId })),
+        });
+      }
 
       return {
         notesImported: incomingNotes.length,
@@ -460,6 +725,17 @@ class LocalStoreService {
     }
   }
 
+  /**
+   * Clears temporary session caches without deleting isolated user vaults.
+   */
+  public clearSessionCaches(): void {
+    try {
+      localStorage.removeItem('project_notes_cache');
+      localStorage.removeItem('projects_cache');
+      localStorage.removeItem('folders_cache');
+    } catch (e) {}
+  }
+
   public async clearAllData(): Promise<void> {
     try {
       await this.db.transaction('rw', [this.db.notes, this.db.folders, this.db.projects, this.db.conflictCopies], async () => {
@@ -468,8 +744,7 @@ class LocalStoreService {
         await this.db.projects.clear();
         await this.db.conflictCopies.clear();
       });
-      localStorage.removeItem('project_notes_cache');
-      localStorage.removeItem('projects_cache');
+      this.clearSessionCaches();
     } catch (e) {
       this.notifyError('Clear all data failed', e);
     }

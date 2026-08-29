@@ -466,7 +466,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         } catch (e) {}
         await signOutUser();
         try {
-          await dbService.clearAllData();
+          dbService.clearSessionCaches();
         } catch (e) {}
         setCustomName('');
         setCustomPhotoURL('');
@@ -475,9 +475,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           localStorage.removeItem('projectnotes_custom_display_name');
           localStorage.removeItem('projectnotes_custom_photo_url');
           localStorage.removeItem('projectnotes_custom_bio');
-          localStorage.removeItem('project_notes_cache');
-          localStorage.removeItem('projects_cache');
-          localStorage.removeItem('folders_cache');
         } catch (e) {}
         if (onUserLoggedOut) {
           onUserLoggedOut();

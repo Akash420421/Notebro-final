@@ -149,20 +149,25 @@ export default function App() {
   // Responsive frame toggle
   const [isMobileFrame, setIsMobileFrame] = useState(false);
 
-  // Load data from IndexedDB on startup
+  // Load data from IndexedDB / User Vault on startup
   useEffect(() => {
     async function loadData() {
       try {
+        const uid = currentUser?.uid;
         const [loadedNotes, loadedFolders, loadedProjects] = await Promise.all([
-          dbService.getAllNotes(),
-          dbService.getAllFolders(),
-          dbService.getAllProjects(),
+          dbService.getAllNotes(uid),
+          dbService.getAllFolders(uid),
+          dbService.getAllProjects(uid),
         ]);
         setNotes(loadedNotes || []);
         setFolders(loadedFolders || []);
-        setProjects(loadedProjects || []);
+        if (loadedProjects && loadedProjects.length > 0) {
+          setProjects(loadedProjects);
+        } else if (!uid) {
+          setProjects(INITIAL_PROJECTS);
+        }
       } catch (err) {
-        console.error('Failed to load data from IndexedDB', err);
+        console.error('Failed to load data from database', err);
       } finally {
         setIsLoading(false);
       }
@@ -215,84 +220,62 @@ export default function App() {
         if (user.photoURL) setCustomAvatar(user.photoURL);
         if (user.displayName) setCustomName(user.displayName);
 
-        // If user changed accounts (from previous user to another user)
-        if (prevUid !== undefined && prevUid !== null && prevUid !== currentUid) {
-          await dbService.clearAllData();
-          setNotes([]);
-          setFolders([]);
-          setProjects(INITIAL_PROJECTS);
-        }
+        // Immediate Fast-Path: Hydrate local data for this user
+        try {
+          const [uNotes, uFolders, uProjects] = await Promise.all([
+            dbService.getAllNotes(user.uid),
+            dbService.getAllFolders(user.uid),
+            dbService.getAllProjects(user.uid),
+          ]);
+          setNotes(uNotes || []);
+          setFolders(uFolders || []);
+          if (uProjects && uProjects.length > 0) {
+            setProjects(uProjects);
+          }
+        } catch (e) {}
+
+        // Connect cloud & server sync in background with reconciliation
+        firestoreSyncService.attachUser(
+          user,
+          async (remoteNotes) => {
+            if (remoteNotes) {
+              setNotes(remoteNotes);
+              try {
+                localStorage.setItem('project_notes_cache', JSON.stringify(remoteNotes));
+              } catch (e) {}
+            }
+          },
+          async (remoteFolders) => {
+            if (remoteFolders) {
+              setFolders(remoteFolders);
+            }
+          },
+          async (remoteProjects) => {
+            if (remoteProjects) {
+              setProjects(remoteProjects);
+              try {
+                localStorage.setItem('projects_cache', JSON.stringify(remoteProjects));
+              } catch (e) {}
+            }
+          }
+        );
       } else {
         // User logged out / signed out
         if (prevUid !== undefined && prevUid !== null) {
-          await dbService.clearAllData();
+          dbService.clearSessionCaches();
           setNotes([]);
           setFolders([]);
           setProjects(INITIAL_PROJECTS);
           setCustomAvatar('');
           setCustomName('');
           try {
-            localStorage.removeItem('project_notes_cache');
-            localStorage.removeItem('projects_cache');
-            localStorage.removeItem('folders_cache');
             localStorage.removeItem('projectnotes_custom_display_name');
             localStorage.removeItem('projectnotes_custom_photo_url');
             localStorage.removeItem('projectnotes_custom_bio');
           } catch (_) {}
         }
+        firestoreSyncService.attachUser(null);
       }
-
-      firestoreSyncService.attachUser(
-        user,
-        async (remoteNotes) => {
-          if (remoteNotes && remoteNotes.length > 0) {
-            setNotes((prev) => {
-              // Merge local notes with remote notes by ID to prevent overwriting un-synced offline edits
-              const mergedMap = new Map<string, NoteItem>();
-              prev.forEach((n) => mergedMap.set(n.id, n));
-              remoteNotes.forEach((rn) => mergedMap.set(rn.id, rn));
-              const merged = Array.from(mergedMap.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-              try {
-                localStorage.setItem('project_notes_cache', JSON.stringify(merged));
-              } catch (e) {}
-              return merged;
-            });
-            for (const n of remoteNotes) {
-              await dbService.saveNote(n);
-            }
-          }
-        },
-        async (remoteFolders) => {
-          if (remoteFolders && remoteFolders.length > 0) {
-            setFolders((prev) => {
-              const folderMap = new Map<string, FolderItem>();
-              prev.forEach((f) => folderMap.set(f.id, f));
-              remoteFolders.forEach((rf) => folderMap.set(rf.id, rf));
-              return Array.from(folderMap.values());
-            });
-            for (const f of remoteFolders) {
-              await dbService.saveFolder(f);
-            }
-          }
-        },
-        async (remoteProjects) => {
-          if (remoteProjects && remoteProjects.length > 0) {
-            setProjects((prev) => {
-              const projMap = new Map<string, ProjectItem>();
-              prev.forEach((p) => projMap.set(p.id, p));
-              remoteProjects.forEach((rp) => projMap.set(rp.id, rp));
-              const mergedProj = Array.from(projMap.values());
-              try {
-                localStorage.setItem('projects_cache', JSON.stringify(mergedProj));
-              } catch (e) {}
-              return mergedProj;
-            });
-            for (const p of remoteProjects) {
-              await dbService.saveProject(p);
-            }
-          }
-        }
-      );
     });
 
     return unsubscribe;

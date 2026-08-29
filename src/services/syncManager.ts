@@ -121,8 +121,12 @@ class SyncManagerService {
       this.updateStatus('saving');
       const userId = this.activeUser.uid;
 
+      // 0. Load existing user notes from local store (vault + dexie)
+      const initialUserNotes = await localStore.getAllNotes(userId);
+      const localMap = new Map<string, NoteItem>();
+      initialUserNotes.forEach((n) => localMap.set(n.id, n));
+
       // 1. Fetch Remote Notes from Supabase for user
-      let remoteNotesFetched = false;
       try {
         const { data: remoteData, error } = await supabase
           .from('notes')
@@ -130,11 +134,6 @@ class SyncManagerService {
           .eq('user_id', userId);
 
         if (!error && Array.isArray(remoteData) && remoteData.length > 0) {
-          remoteNotesFetched = true;
-          const localNotes = await localStore.getAllNotes();
-          const localMap = new Map<string, NoteItem>();
-          localNotes.forEach((n) => localMap.set(n.id, n));
-
           for (const item of remoteData) {
             const rawNote = item.note_data ? item.note_data : item;
             const remoteNote: NoteItem = {
@@ -171,7 +170,8 @@ class SyncManagerService {
             };
 
             const local = localMap.get(remoteNote.id);
-            if (!local || remoteNote.updatedAt > (local.updatedAt || 0)) {
+            if (!local || (remoteNote.updatedAt || 0) >= (local.updatedAt || 0)) {
+              localMap.set(remoteNote.id, remoteNote);
               await localStore.saveNote(remoteNote);
             }
           }
@@ -189,27 +189,25 @@ class SyncManagerService {
             const { notes: sNotes, folders: sFolders, projects: sProjects, studentDoubtSessions, developerSessions } = srvData.bundle;
             
             if (Array.isArray(sNotes) && sNotes.length > 0) {
-              const currentNotes = await localStore.getAllNotes();
-              const cMap = new Map<string, NoteItem>();
-              currentNotes.forEach(n => cMap.set(n.id, n));
-
               for (const n of sNotes) {
-                const existing = cMap.get(n.id);
-                if (!existing || (n.updatedAt && n.updatedAt > (existing.updatedAt || 0))) {
-                  await localStore.saveNote({ ...n, userId, syncStatus: 'synced' });
+                const existing = localMap.get(n.id);
+                if (!existing || ((n.updatedAt || 0) >= (existing.updatedAt || 0))) {
+                  const mergedN: NoteItem = { ...n, userId, user_id: userId, syncStatus: 'synced' };
+                  localMap.set(n.id, mergedN);
+                  await localStore.saveNote(mergedN);
                 }
               }
             }
 
             if (Array.isArray(sFolders) && sFolders.length > 0) {
               for (const f of sFolders) {
-                await localStore.saveFolder({ ...f, userId });
+                await localStore.saveFolder({ ...f, userId, user_id: userId });
               }
             }
 
             if (Array.isArray(sProjects) && sProjects.length > 0) {
               for (const p of sProjects) {
-                await localStore.saveProject({ ...p, userId });
+                await localStore.saveProject({ ...p, userId, user_id: userId });
               }
             }
 
@@ -270,10 +268,15 @@ class SyncManagerService {
         }
       } catch (e) {}
 
+      // Check if user is still active before applying state
+      if (this.activeUser?.uid !== userId) return;
+
       // Notify UI with fully reconciled data for this user
-      const allFinalNotes = await localStore.getAllNotes();
-      const allFinalFolders = await localStore.getAllFolders();
-      const allFinalProjects = await localStore.getAllProjects();
+      const allFinalNotes = await localStore.getAllNotes(userId);
+      const allFinalFolders = await localStore.getAllFolders(userId);
+      const allFinalProjects = await localStore.getAllProjects(userId);
+
+      if (this.activeUser?.uid !== userId) return;
 
       if (onRemoteNotesUpdate) onRemoteNotesUpdate(allFinalNotes);
       if (onRemoteFoldersUpdate) onRemoteFoldersUpdate(allFinalFolders);
@@ -354,7 +357,7 @@ class SyncManagerService {
 
     try {
       const userId = this.activeUser.uid;
-      const allNotes = await localStore.getAllNotes();
+      const allNotes = await localStore.getAllNotes(userId);
       const pendingNotes = allNotes.filter((n) => n.syncStatus === 'pending');
 
       // 1. Sync pending notes
@@ -377,7 +380,7 @@ class SyncManagerService {
       }
 
       // 2. Sync folders
-      const allFolders = await localStore.getAllFolders();
+      const allFolders = await localStore.getAllFolders(userId);
       for (const folder of allFolders) {
         try {
           await supabase.from('folders').upsert({
@@ -391,7 +394,7 @@ class SyncManagerService {
       }
 
       // 3. Sync projects
-      const allProjects = await localStore.getAllProjects();
+      const allProjects = await localStore.getAllProjects(userId);
       for (const proj of allProjects) {
         try {
           await supabase.from('projects').upsert({

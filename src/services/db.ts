@@ -9,8 +9,8 @@ export const DEFAULT_FOLDERS: FolderItem[] = [
  * dbService wrapper delegating to Dexie.js localStore with full zero-data-loss guarantees
  */
 class DBServiceWrapper {
-  async getAllNotes(): Promise<NoteItem[]> {
-    return await localStore.getAllNotes();
+  async getAllNotes(userId?: string): Promise<NoteItem[]> {
+    return await localStore.getAllNotes(userId);
   }
 
   async getNoteById(id: string): Promise<NoteItem | undefined> {
@@ -19,6 +19,10 @@ class DBServiceWrapper {
 
   async saveNote(note: NoteItem): Promise<void> {
     return await localStore.saveNote(note);
+  }
+
+  async bulkSaveNotes(notes: NoteItem[], userId?: string): Promise<void> {
+    return await localStore.bulkSaveNotes(notes, userId);
   }
 
   async deleteNote(id: string): Promise<void> {
@@ -33,8 +37,8 @@ class DBServiceWrapper {
     return await localStore.restoreNote(id);
   }
 
-  async getAllProjects(): Promise<ProjectItem[]> {
-    return await localStore.getAllProjects();
+  async getAllProjects(userId?: string): Promise<ProjectItem[]> {
+    return await localStore.getAllProjects(userId);
   }
 
   async saveProject(project: ProjectItem): Promise<void> {
@@ -45,8 +49,8 @@ class DBServiceWrapper {
     return await localStore.deleteProject(id);
   }
 
-  async getAllFolders(): Promise<FolderItem[]> {
-    return await localStore.getAllFolders();
+  async getAllFolders(userId?: string): Promise<FolderItem[]> {
+    return await localStore.getAllFolders(userId);
   }
 
   async saveFolder(folder: FolderItem): Promise<void> {
@@ -55,6 +59,18 @@ class DBServiceWrapper {
 
   async deleteFolder(folderId: string): Promise<void> {
     return await localStore.deleteFolder(folderId);
+  }
+
+  getUserVault(userId: string) {
+    return localStore.getUserVault(userId);
+  }
+
+  saveUserVault(userId: string, partial: any) {
+    return localStore.saveUserVault(userId, partial);
+  }
+
+  clearSessionCaches(): void {
+    localStore.clearSessionCaches();
   }
 
   async clearAllData(): Promise<void> {
