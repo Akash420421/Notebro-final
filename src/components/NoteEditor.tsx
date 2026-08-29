@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { SketchCanvasModal } from './SketchCanvasModal';
 import { NoteResourcesManager } from './NoteResourcesManager';
+import { useKeyboardViewport } from '../hooks/useKeyboardViewport';
 import {
   ArrowLeft,
   Pin,
@@ -140,6 +141,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   onCreateFolder,
 }) => {
   const isNewNote = !initialNote;
+
+  // Keyboard & Viewport Tracking for Mobile Soft Keyboard awareness
+  const { viewportHeight, viewportTop } = useKeyboardViewport();
 
   // Note Mode State (Normal | Student | Developer)
   const [noteMode, setNoteMode] = useState<AppMode>(
@@ -674,7 +678,14 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   const currentProject = projects?.find((p) => p.id === projectId);
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col justify-between overflow-hidden animate-in fade-in duration-150">
+    <div
+      className="fixed left-0 right-0 z-50 bg-white flex flex-col justify-between overflow-hidden animate-in fade-in duration-150"
+      style={{
+        top: `${viewportTop}px`,
+        height: viewportHeight > 0 ? `${viewportHeight}px` : '100dvh',
+        maxHeight: viewportHeight > 0 ? `${viewportHeight}px` : '100dvh',
+      }}
+    >
       {/* Hidden File Input for Image Uploads */}
       <input
         ref={fileInputRef}
@@ -885,8 +896,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             </div>
           )}
 
-          {/* Folder Assignment */}
-          <div className="relative shrink-0">
+          {/* Folder Assignment (Visible on desktop/larger screens; moved to Options menu on mobile) */}
+          <div className="relative shrink-0 hidden sm:block">
             <button
               onClick={() => {
                 setShowFolderPicker(!showFolderPicker);
@@ -903,7 +914,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               <ChevronDown className="w-3 h-3 text-neutral-400 shrink-0" />
             </button>
 
-            {/* Folder Dropdown */}
+            {/* Desktop Folder Dropdown */}
             {showFolderPicker && (
               <div className="absolute left-0 top-9 w-60 bg-white border border-neutral-200 rounded-xl shadow-xl p-2 z-40 animate-in fade-in zoom-in-95">
                 <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-2 py-1">
@@ -1234,9 +1245,25 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
             {showMoreMenu && (
               <div
-                className="absolute right-0 top-9 w-44 bg-white border border-neutral-200 rounded-xl shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95"
+                className="absolute right-0 top-9 w-48 bg-white border border-neutral-200 rounded-xl shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95"
                 onClick={() => setShowMoreMenu(false)}
               >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFolderPicker(true);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Folder className="w-3.5 h-3.5 text-neutral-500" />
+                    <span>Category</span>
+                  </div>
+                  <span className="text-[11px] text-neutral-500 font-normal truncate max-w-[80px] bg-neutral-100 px-1.5 py-0.5 rounded">
+                    {currentFolder ? currentFolder.name : 'None'}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowTagPicker(!showTagPicker)}
@@ -1513,6 +1540,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       {/* 3. VISUAL RICH FORMATTING RIBBON TOOLBAR */}
       <div className="bg-white border-t border-neutral-200 px-2.5 sm:px-6 py-2 flex items-center justify-start gap-1 select-none overflow-x-auto shrink-0 scrollbar-none z-20">
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('bold')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1522,6 +1550,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </button>
 
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('italic')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1531,6 +1560,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </button>
 
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('underline')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1544,6 +1574,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         {/* Text Highlighter */}
         <div className="flex items-center gap-0.5 bg-neutral-50 rounded-md p-0.5 border border-neutral-200 shrink-0">
           <button
+            onPointerDown={(e) => e.preventDefault()}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => handleApplyHighlight()}
             className="flex items-center gap-1 px-2 py-1 rounded text-neutral-700 hover:bg-white transition cursor-pointer text-xs font-medium"
@@ -1557,6 +1588,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
             />
           </button>
           <button
+            onPointerDown={(e) => e.preventDefault()}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setShowHighlightColorStrip(!showHighlightColorStrip)}
             className="p-1 rounded text-neutral-500 hover:text-neutral-800 hover:bg-white transition"
@@ -1571,6 +1603,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         {/* To-Do List Item Button */}
         <button
           id="editor-insert-todo-btn"
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={insertTodoItem}
           className="flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-200 rounded-md text-xs font-medium transition cursor-pointer shrink-0"
@@ -1583,6 +1616,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         <div className="w-[1px] h-4 bg-neutral-200 mx-1 shrink-0" />
 
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('formatBlock', '<h2>')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1592,6 +1626,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </button>
 
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('insertUnorderedList')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1601,6 +1636,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </button>
 
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('insertOrderedList')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1610,6 +1646,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </button>
 
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('formatBlock', '<blockquote>')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1619,6 +1656,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </button>
 
         <button
+          onPointerDown={(e) => e.preventDefault()}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => executeFormat('insertHorizontalRule')}
           className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
@@ -1627,6 +1665,85 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           <Minus className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Mobile Category Selection Modal (Triggered via ⋮ Options on mobile) */}
+      {showFolderPicker && (
+        <div
+          className="fixed inset-0 z-60 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 sm:hidden animate-in fade-in duration-150"
+          onClick={() => setShowFolderPicker(false)}
+        >
+          <div
+            className="w-full max-w-xs bg-white rounded-2xl shadow-2xl p-4 border border-neutral-200 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-neutral-100 mb-3">
+              <div className="flex items-center gap-2">
+                <Folder className="w-4 h-4 text-neutral-600" />
+                <h3 className="text-sm font-semibold text-neutral-900">Select Category</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFolderPicker(false)}
+                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-52 overflow-y-auto space-y-1 my-1 pr-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setFolderId(undefined);
+                  setShowFolderPicker(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition ${
+                  !folderId ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700 bg-neutral-50'
+                }`}
+              >
+                <span>Uncategorised</span>
+                {!folderId && <Check className="w-4 h-4" />}
+              </button>
+              {folders.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    setFolderId(f.id);
+                    setShowFolderPicker(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition ${
+                    folderId === f.id ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700 bg-neutral-50'
+                  }`}
+                >
+                  <span className="truncate">{f.name}</span>
+                  {folderId === f.id && <Check className="w-4 h-4" />}
+                </button>
+              ))}
+            </div>
+
+            <form
+              onSubmit={handleCreateCustomFolder}
+              className="mt-3 pt-3 border-t border-neutral-100 flex items-center gap-1.5"
+            >
+              <input
+                type="text"
+                value={newFolderNameInput}
+                onChange={(e) => setNewFolderNameInput(e.target.value)}
+                placeholder="New category..."
+                className="flex-1 px-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs outline-none focus:border-neutral-900"
+              />
+              <button
+                type="submit"
+                disabled={!newFolderNameInput.trim()}
+                className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-neutral-800 transition shrink-0 cursor-pointer"
+              >
+                Add
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* SKETCH STUDIO MODAL */}
       <SketchCanvasModal
