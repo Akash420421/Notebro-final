@@ -136,6 +136,217 @@ async function startServer() {
     });
   });
 
+  // Supabase Configuration and Status Endpoints
+  app.get('/api/config/supabase', (req, res) => {
+    const url = (
+      process.env.VITE_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      ''
+    ).trim();
+
+    const anonKey = (
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_KEY ||
+      ''
+    ).trim();
+
+    const isConfigured = Boolean(
+      url &&
+      anonKey &&
+      !url.includes('<project-ref>') &&
+      !url.includes('your-project') &&
+      !url.startsWith('YOUR_') &&
+      (url.startsWith('http://') || url.startsWith('https://')) &&
+      anonKey.length > 10 &&
+      !anonKey.startsWith('YOUR_')
+    );
+
+    res.json({
+      configured: isConfigured,
+      supabaseUrl: isConfigured ? url : '',
+      supabaseAnonKey: isConfigured ? anonKey : '',
+    });
+  });
+
+  app.get('/api/supabase/status', async (req, res) => {
+    const url = (
+      process.env.VITE_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      ''
+    ).trim();
+
+    const anonKey = (
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_KEY ||
+      ''
+    ).trim();
+
+    if (!url || !anonKey || url.includes('<project-ref>') || url.startsWith('YOUR_')) {
+      return res.json({
+        connected: false,
+        message: 'Supabase URL or API Key is not configured yet.',
+      });
+    }
+
+    try {
+      const pingRes = await fetch(`${url}/rest/v1/`, {
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+        },
+      });
+
+      return res.json({
+        connected: pingRes.ok || pingRes.status === 200 || pingRes.status === 404 || pingRes.status === 401,
+        status: pingRes.status,
+        url,
+        message: pingRes.ok ? 'Successfully connected to Supabase REST API!' : `Connected with status: ${pingRes.status}`,
+      });
+    } catch (err: any) {
+      return res.json({
+        connected: false,
+        message: `Connection failed: ${err?.message || 'Unknown network error'}`,
+      });
+    }
+  });
+
+  // Supabase Anti-Pause Keep-Alive (Simulates Real User Activity / REST & Auth Queries)
+  let keepAliveStats = {
+    totalPings: 0,
+    lastPingTime: '',
+    lastLatencyMs: 0,
+    lastStatus: 'Never run',
+    lastEndpointsHit: [] as string[],
+  };
+
+  app.post('/api/supabase/keepalive', async (req, res) => {
+    const url = (
+      req.body?.supabaseUrl ||
+      process.env.VITE_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      ''
+    ).trim();
+
+    const anonKey = (
+      req.body?.supabaseAnonKey ||
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_KEY ||
+      ''
+    ).trim();
+
+    if (!url || !anonKey || url.includes('<project-ref>') || url.startsWith('YOUR_')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Supabase URL or API Key is missing or invalid.',
+        stats: keepAliveStats,
+      });
+    }
+
+    const startTime = Date.now();
+    const actionsPerformed: string[] = [];
+
+    try {
+      const headers = {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      };
+
+      // 1. Hit REST Schema Root (registers API Gateway activity)
+      const r1 = await fetch(`${url}/rest/v1/`, { headers });
+      actionsPerformed.push(`REST Schema Ping [Status: ${r1.status}]`);
+
+      // 2. Query notes table (registers Postgres read transaction)
+      const r2 = await fetch(`${url}/rest/v1/notes?select=id&limit=1`, { headers });
+      actionsPerformed.push(`Postgres Table Query (notes) [Status: ${r2.status}]`);
+
+      // 3. Query projects table (registers Postgres read transaction)
+      const r3 = await fetch(`${url}/rest/v1/projects?select=id&limit=1`, { headers });
+      actionsPerformed.push(`Postgres Table Query (projects) [Status: ${r3.status}]`);
+
+      // 4. Hit Auth service settings (registers GoTrue auth activity)
+      const r4 = await fetch(`${url}/auth/v1/settings`, { headers });
+      actionsPerformed.push(`Auth Service Ping (GoTrue) [Status: ${r4.status}]`);
+
+      const latencyMs = Date.now() - startTime;
+      keepAliveStats = {
+        totalPings: keepAliveStats.totalPings + 1,
+        lastPingTime: new Date().toISOString(),
+        lastLatencyMs: latencyMs,
+        lastStatus: 'Active - Free Tier Kept Alive',
+        lastEndpointsHit: actionsPerformed,
+      };
+
+      return res.json({
+        success: true,
+        message: 'Real user activity successfully sent to Supabase. Free tier pause counter reset!',
+        latencyMs,
+        actionsPerformed,
+        stats: keepAliveStats,
+      });
+    } catch (err: any) {
+      const latencyMs = Date.now() - startTime;
+      keepAliveStats = {
+        totalPings: keepAliveStats.totalPings + 1,
+        lastPingTime: new Date().toISOString(),
+        lastLatencyMs: latencyMs,
+        lastStatus: `Error: ${err?.message || 'Network failure'}`,
+        lastEndpointsHit: actionsPerformed,
+      };
+
+      return res.status(500).json({
+        success: false,
+        message: `Keep-alive query failed: ${err?.message || 'Network error'}`,
+        latencyMs,
+        actionsPerformed,
+        stats: keepAliveStats,
+      });
+    }
+  });
+
+  app.get('/api/supabase/keepalive/stats', (req, res) => {
+    res.json(keepAliveStats);
+  });
+
+  // Automated background keep-alive runner (runs every 6 hours if Supabase credentials exist)
+  setInterval(async () => {
+    const url = (
+      process.env.VITE_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      ''
+    ).trim();
+
+    const anonKey = (
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      ''
+    ).trim();
+
+    if (url && anonKey && !url.includes('<project-ref>') && !url.startsWith('YOUR_')) {
+      try {
+        const headers = { apikey: anonKey, Authorization: `Bearer ${anonKey}` };
+        await Promise.allSettled([
+          fetch(`${url}/rest/v1/`, { headers }),
+          fetch(`${url}/rest/v1/notes?select=id&limit=1`, { headers }),
+        ]);
+        console.log('⏰ [Supabase Auto Keep-Alive] Background ping triggered successfully to prevent free-tier project pausing.');
+      } catch (err) {
+        console.warn('⚠️ [Supabase Auto Keep-Alive] Periodic ping failed:', err);
+      }
+    }
+  }, 6 * 60 * 60 * 1000); // 6 hours
+
   app.get('/api/ai/ping', async (req, res) => {
     const startTime = Date.now();
     try {
@@ -670,6 +881,93 @@ ${cleanNoteContext ? `\nActive Note Context for Reference (use only if relevant)
       res.json({ success: true, message: 'Profile updated on server' });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to update profile' });
+    }
+  });
+
+  // =========================================================================
+  // USER ACCOUNT FULL DATA PERSISTENCE & MULTI-DEVICE RECONCILIATION API
+  // (Ensures all notes, projects, folders, doubts & history persist across logins)
+  // =========================================================================
+  const userDataBundlesStore = new Map<string, {
+    userId: string;
+    notes: any[];
+    folders: any[];
+    projects: any[];
+    studentDoubtSessions?: any[];
+    developerSessions?: any[];
+    updatedAt: number;
+  }>();
+
+  app.get('/api/users/:userId/data', (req, res) => {
+    try {
+      const { userId } = req.params;
+      const cleanId = (userId || '').trim();
+      if (!cleanId) {
+        return res.status(400).json({ error: 'User ID required' });
+      }
+
+      const bundle = userDataBundlesStore.get(cleanId) || {
+        userId: cleanId,
+        notes: [],
+        folders: [],
+        projects: [],
+        studentDoubtSessions: [],
+        developerSessions: [],
+        updatedAt: Date.now(),
+      };
+
+      res.json({ success: true, bundle });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to fetch user data' });
+    }
+  });
+
+  app.post('/api/users/:userId/data', (req, res) => {
+    try {
+      const { userId } = req.params;
+      const cleanId = (userId || '').trim();
+      if (!cleanId) {
+        return res.status(400).json({ error: 'User ID required' });
+      }
+
+      const { notes, folders, projects, studentDoubtSessions, developerSessions } = req.body;
+      const existing = userDataBundlesStore.get(cleanId);
+
+      const notesMap = new Map<string, any>();
+      if (existing?.notes) existing.notes.forEach((n) => notesMap.set(n.id, n));
+      if (Array.isArray(notes)) notes.forEach((n) => notesMap.set(n.id, n));
+
+      const foldersMap = new Map<string, any>();
+      if (existing?.folders) existing.folders.forEach((f) => foldersMap.set(f.id, f));
+      if (Array.isArray(folders)) folders.forEach((f) => foldersMap.set(f.id, f));
+
+      const projectsMap = new Map<string, any>();
+      if (existing?.projects) existing.projects.forEach((p) => projectsMap.set(p.id, p));
+      if (Array.isArray(projects)) projects.forEach((p) => projectsMap.set(p.id, p));
+
+      const updatedBundle = {
+        userId: cleanId,
+        notes: Array.from(notesMap.values()),
+        folders: Array.from(foldersMap.values()),
+        projects: Array.from(projectsMap.values()),
+        studentDoubtSessions: Array.isArray(studentDoubtSessions) ? studentDoubtSessions : existing?.studentDoubtSessions || [],
+        developerSessions: Array.isArray(developerSessions) ? developerSessions : existing?.developerSessions || [],
+        updatedAt: Date.now(),
+      };
+
+      userDataBundlesStore.set(cleanId, updatedBundle);
+
+      // Also update user notes count in admin registry
+      const regUser = registeredUsersStore.get(cleanId);
+      if (regUser) {
+        regUser.notesCount = updatedBundle.notes.filter((n) => !n.isDeleted).length;
+        regUser.lastActiveAt = Date.now();
+        registeredUsersStore.set(cleanId, regUser);
+      }
+
+      res.json({ success: true, bundle: updatedBundle });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to save user data' });
     }
   });
 

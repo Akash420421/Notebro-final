@@ -128,6 +128,8 @@ export interface StorageHealthInfo {
 
 export interface NoteItem {
   id: string;
+  userId?: string;
+  user_id?: string;
   type: NoteType;
   title: string;
   body: string; // Markdown-lite / rich HTML content
@@ -199,6 +201,8 @@ export interface AdminUserItem {
 
 export interface FolderItem {
   id: string;
+  userId?: string;
+  user_id?: string;
   name: string;
   createdAt: number;
   color?: string;
@@ -281,6 +285,8 @@ export interface ApiEndpointItem {
 
 export interface ProjectItem {
   id: string;
+  userId?: string;
+  user_id?: string;
   title: string;
   subtitle?: string;
   description: string;

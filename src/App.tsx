@@ -30,6 +30,7 @@ import { TrashModal } from './components/TrashModal';
 import { FeedbackModal } from './components/FeedbackModal';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { SecretAdminAccessModal } from './components/SecretAdminAccessModal';
+import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
 import { Plus, Smartphone, Monitor, User as UserIcon, Zap, Download } from 'lucide-react';
 
@@ -65,6 +66,7 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isSecretPromptOpen, setIsSecretPromptOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isStandalone, setIsStandalone] = useState(false);
 
@@ -263,18 +265,27 @@ export default function App() {
 
   // Save notes changes
   const handleSaveNote = async (updatedNote: NoteItem) => {
+    const noteWithUser: NoteItem = {
+      ...updatedNote,
+      userId: updatedNote.userId || currentUser?.uid || undefined,
+      user_id: updatedNote.user_id || currentUser?.uid || undefined,
+    };
+
     setNotes((prev) => {
-      const exists = prev.some((n) => n.id === updatedNote.id);
+      const exists = prev.some((n) => n.id === noteWithUser.id);
       const newNotes = exists
-        ? prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
-        : [updatedNote, ...prev];
+        ? prev.map((n) => (n.id === noteWithUser.id ? noteWithUser : n))
+        : [noteWithUser, ...prev];
       try {
         localStorage.setItem('project_notes_cache', JSON.stringify(newNotes));
+        if (currentUser?.uid) {
+          localStorage.setItem(`user_notes_cache_${currentUser.uid}`, JSON.stringify(newNotes));
+        }
       } catch (e) {}
       return newNotes;
     });
-    await dbService.saveNote(updatedNote);
-    await firestoreSyncService.syncNote(updatedNote);
+    await dbService.saveNote(noteWithUser);
+    await firestoreSyncService.syncNote(noteWithUser);
   };
 
   // Delete note - Moved to 30-Day Trash Backup
@@ -394,6 +405,8 @@ export default function App() {
     const newProject: ProjectItem = {
       ...newProjData,
       id: `proj-${Date.now()}`,
+      userId: currentUser?.uid || undefined,
+      user_id: currentUser?.uid || undefined,
       createdAt: 'Just now',
       updatedAt: 'Just now',
     };
@@ -412,16 +425,22 @@ export default function App() {
 
   // Update existing Project
   const handleUpdateProject = async (updatedProject: ProjectItem) => {
+    const projectWithUser: ProjectItem = {
+      ...updatedProject,
+      userId: updatedProject.userId || currentUser?.uid || undefined,
+      user_id: updatedProject.user_id || currentUser?.uid || undefined,
+    };
+
     setProjects((prev) => {
-      const updated = prev.map((p) => (p.id === updatedProject.id ? updatedProject : p));
+      const updated = prev.map((p) => (p.id === projectWithUser.id ? projectWithUser : p));
       try {
         localStorage.setItem('projects_cache', JSON.stringify(updated));
       } catch (e) {}
       return updated;
     });
-    setSelectedProject(updatedProject);
-    await dbService.saveProject(updatedProject);
-    await firestoreSyncService.syncProject(updatedProject);
+    setSelectedProject(projectWithUser);
+    await dbService.saveProject(projectWithUser);
+    await firestoreSyncService.syncProject(projectWithUser);
   };
 
   // Delete Project with undo
@@ -479,6 +498,8 @@ export default function App() {
   const handleCreateFolder = async (name: string): Promise<FolderItem> => {
     const newFolder: FolderItem = {
       id: `folder-${Date.now()}`,
+      userId: currentUser?.uid || undefined,
+      user_id: currentUser?.uid || undefined,
       name,
       createdAt: Date.now(),
     };
@@ -759,7 +780,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F2F4F7] text-neutral-900 flex flex-col items-center justify-start antialiased py-0 sm:py-6 selection:bg-neutral-900 selection:text-white">
       {/* RISK 2/3/4: Storage Persistence, Incognito, Low Space, Write Error Banners */}
-      <StorageProtectionBanner />
+      <StorageProtectionBanner onOpenBackupModal={() => setIsBackupModalOpen(true)} />
 
       {/* Viewport Container */}
       <div
@@ -1156,6 +1177,20 @@ export default function App() {
         deferredPrompt={deferredPrompt}
         onInstalled={() => {
           setIsStandalone(true);
+        }}
+      />
+
+      {/* Zero Data Loss & Storage Backup/Restore Modal */}
+      <BackupRestoreModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        onDataRestored={async () => {
+          const freshNotes = await dbService.getAllNotes();
+          const freshFolders = await dbService.getAllFolders();
+          const freshProjects = await dbService.getAllProjects();
+          setNotes(freshNotes);
+          setFolders(freshFolders);
+          setProjects(freshProjects);
         }}
       />
     </div>

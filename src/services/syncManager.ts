@@ -108,102 +108,132 @@ class SyncManagerService {
   }
 
   /**
-   * Pull latest changes from Supabase and merge with Local-First guarantees
+   * Pull latest changes from Supabase and Server API, and merge with Local-First guarantees
    */
   public async reconcileWithRemote(
     onRemoteNotesUpdate?: (notes: NoteItem[]) => void,
     onRemoteFoldersUpdate?: (folders: FolderItem[]) => void,
     onRemoteProjectsUpdate?: (projects: ProjectItem[]) => void
   ) {
-    if (!this.activeUser || !this.isOnline) return;
+    if (!this.activeUser) return;
 
     try {
       this.updateStatus('saving');
       const userId = this.activeUser.uid;
 
-      // 1. Fetch Remote Notes for user
-      const { data: remoteData, error } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('user_id', userId);
+      // 1. Fetch Remote Notes from Supabase for user
+      let remoteNotesFetched = false;
+      try {
+        const { data: remoteData, error } = await supabase
+          .from('notes')
+          .select('*')
+          .eq('user_id', userId);
 
-      if (!error && Array.isArray(remoteData)) {
-        const localNotes = await localStore.getAllNotes();
-        const localMap = new Map<string, NoteItem>();
-        localNotes.forEach((n) => localMap.set(n.id, n));
+        if (!error && Array.isArray(remoteData) && remoteData.length > 0) {
+          remoteNotesFetched = true;
+          const localNotes = await localStore.getAllNotes();
+          const localMap = new Map<string, NoteItem>();
+          localNotes.forEach((n) => localMap.set(n.id, n));
 
-        const updatedNotesList: NoteItem[] = [];
+          for (const item of remoteData) {
+            const rawNote = item.note_data ? item.note_data : item;
+            const remoteNote: NoteItem = {
+              id: item.id || rawNote.id,
+              userId: userId,
+              user_id: userId,
+              type: rawNote.type || 'text',
+              title: rawNote.title || 'Untitled',
+              body: rawNote.body || '',
+              checklistItems: rawNote.checklistItems || [],
+              images: rawNote.images || [],
+              sketches: rawNote.sketches || [],
+              youtubeLinks: rawNote.youtubeLinks || [],
+              webLinks: rawNote.webLinks || [],
+              importantQuestions: rawNote.importantQuestions || [],
+              studentSubject: rawNote.studentSubject,
+              quickFormulas: rawNote.quickFormulas,
+              apiKeys: rawNote.apiKeys,
+              promptBoxes: rawNote.promptBoxes,
+              specFiles: rawNote.specFiles,
+              devWebsites: rawNote.devWebsites,
+              devVideos: rawNote.devVideos,
+              folderId: rawNote.folderId,
+              tags: rawNote.tags || [],
+              isPinned: !!rawNote.isPinned,
+              isArchived: !!rawNote.isArchived,
+              isDeleted: !!rawNote.isDeleted,
+              deletedAt: rawNote.deletedAt,
+              color: rawNote.color,
+              mode: rawNote.mode || 'normal',
+              createdAt: rawNote.createdAt || Date.now(),
+              updatedAt: rawNote.updatedAt || Date.now(),
+              syncStatus: 'synced',
+            };
 
-        for (const item of remoteData) {
-          const rawNote = item.note_data ? item.note_data : item;
-          const remoteNote: NoteItem = {
-            id: item.id || rawNote.id,
-            type: rawNote.type || 'text',
-            title: rawNote.title || 'Untitled',
-            body: rawNote.body || '',
-            checklistItems: rawNote.checklistItems || [],
-            images: rawNote.images || [],
-            sketches: rawNote.sketches || [],
-            youtubeLinks: rawNote.youtubeLinks || [],
-            webLinks: rawNote.webLinks || [],
-            importantQuestions: rawNote.importantQuestions || [],
-            studentSubject: rawNote.studentSubject,
-            quickFormulas: rawNote.quickFormulas,
-            apiKeys: rawNote.apiKeys,
-            promptBoxes: rawNote.promptBoxes,
-            specFiles: rawNote.specFiles,
-            devWebsites: rawNote.devWebsites,
-            devVideos: rawNote.devVideos,
-            folderId: rawNote.folderId,
-            tags: rawNote.tags || [],
-            isPinned: !!rawNote.isPinned,
-            isArchived: !!rawNote.isArchived,
-            isDeleted: !!rawNote.isDeleted,
-            deletedAt: rawNote.deletedAt,
-            color: rawNote.color,
-            mode: rawNote.mode || 'normal',
-            createdAt: rawNote.createdAt || Date.now(),
-            updatedAt: rawNote.updatedAt || Date.now(),
-            syncStatus: 'synced',
-          };
-
-          const local = localMap.get(remoteNote.id);
-
-          if (!local) {
-            // New remote note: save to local store
-            await localStore.saveNote(remoteNote);
-            updatedNotesList.push(remoteNote);
-          } else {
-            // RISK 6: Local Unsynced Changes NEVER Overwritten
-            if (local.syncStatus === 'pending') {
-              // Local has unsynced changes. Local wins.
-              // If remote was also updated newer than local baseline, archive conflict
-              if (remoteNote.updatedAt > local.updatedAt) {
-                await localStore.saveConflictCopy({
-                  id: `conflict_${remoteNote.id}_${Date.now()}`,
-                  originalNoteId: remoteNote.id,
-                  title: remoteNote.title,
-                  body: remoteNote.body,
-                  remoteUpdatedAt: remoteNote.updatedAt,
-                  savedAt: Date.now(),
-                  reason: 'Simultaneous offline edit detected on another device',
-                });
-              }
-            } else if (remoteNote.updatedAt > (local.updatedAt || 0)) {
-              // Remote is newer and local is already synced: safe update
+            const local = localMap.get(remoteNote.id);
+            if (!local || remoteNote.updatedAt > (local.updatedAt || 0)) {
               await localStore.saveNote(remoteNote);
-              updatedNotesList.push(remoteNote);
             }
           }
         }
-
-        if (updatedNotesList.length > 0 && onRemoteNotesUpdate) {
-          const allFreshNotes = await localStore.getAllNotes();
-          onRemoteNotesUpdate(allFreshNotes);
-        }
+      } catch (sbErr) {
+        console.warn('Supabase notes reconcile check:', sbErr);
       }
 
-      // 2. Fetch Folders
+      // 2. Fallback / Augment with Server-Side User Account Data Backup
+      try {
+        const serverRes = await fetch(`/api/users/${encodeURIComponent(userId)}/data`);
+        if (serverRes.ok) {
+          const srvData = await serverRes.json();
+          if (srvData?.bundle) {
+            const { notes: sNotes, folders: sFolders, projects: sProjects, studentDoubtSessions, developerSessions } = srvData.bundle;
+            
+            if (Array.isArray(sNotes) && sNotes.length > 0) {
+              const currentNotes = await localStore.getAllNotes();
+              const cMap = new Map<string, NoteItem>();
+              currentNotes.forEach(n => cMap.set(n.id, n));
+
+              for (const n of sNotes) {
+                const existing = cMap.get(n.id);
+                if (!existing || (n.updatedAt && n.updatedAt > (existing.updatedAt || 0))) {
+                  await localStore.saveNote({ ...n, userId, syncStatus: 'synced' });
+                }
+              }
+            }
+
+            if (Array.isArray(sFolders) && sFolders.length > 0) {
+              for (const f of sFolders) {
+                await localStore.saveFolder({ ...f, userId });
+              }
+            }
+
+            if (Array.isArray(sProjects) && sProjects.length > 0) {
+              for (const p of sProjects) {
+                await localStore.saveProject({ ...p, userId });
+              }
+            }
+
+            // Restore doubt & dev sessions to user localStorage
+            if (Array.isArray(studentDoubtSessions) && studentDoubtSessions.length > 0) {
+              try {
+                localStorage.setItem(`student_doubt_sessions_${userId}`, JSON.stringify(studentDoubtSessions));
+                localStorage.setItem('student_doubt_sessions_v2', JSON.stringify(studentDoubtSessions));
+              } catch (e) {}
+            }
+
+            if (Array.isArray(developerSessions) && developerSessions.length > 0) {
+              try {
+                localStorage.setItem(`developer_ai_sessions_${userId}`, JSON.stringify(developerSessions));
+                localStorage.setItem('developer_ai_sessions_v1', JSON.stringify(developerSessions));
+              } catch (e) {}
+            }
+          }
+        }
+      } catch (srvErr) {
+        console.warn('Server user-data reconcile check:', srvErr);
+      }
+
+      // 3. Fetch Folders from Supabase
       try {
         const { data: folderData } = await supabase
           .from('folders')
@@ -215,19 +245,17 @@ class SyncManagerService {
             const rawFolder = f.folder_data || f;
             await localStore.saveFolder({
               id: f.id || rawFolder.id,
+              userId: userId,
+              user_id: userId,
               name: rawFolder.name || 'Folder',
               createdAt: rawFolder.createdAt || Date.now(),
               color: rawFolder.color,
             });
           }
-          if (onRemoteFoldersUpdate) {
-            const folders = await localStore.getAllFolders();
-            onRemoteFoldersUpdate(folders);
-          }
         }
       } catch (e) {}
 
-      // 3. Fetch Projects
+      // 4. Fetch Projects from Supabase
       try {
         const { data: projectData } = await supabase
           .from('projects')
@@ -237,19 +265,24 @@ class SyncManagerService {
         if (Array.isArray(projectData)) {
           for (const p of projectData) {
             const rawProj = p.project_data || p;
-            await localStore.saveProject(rawProj);
-          }
-          if (onRemoteProjectsUpdate) {
-            const projects = await localStore.getAllProjects();
-            onRemoteProjectsUpdate(projects);
+            await localStore.saveProject({ ...rawProj, userId, user_id: userId });
           }
         }
       } catch (e) {}
 
-      // 4. Push any pending local notes
+      // Notify UI with fully reconciled data for this user
+      const allFinalNotes = await localStore.getAllNotes();
+      const allFinalFolders = await localStore.getAllFolders();
+      const allFinalProjects = await localStore.getAllProjects();
+
+      if (onRemoteNotesUpdate) onRemoteNotesUpdate(allFinalNotes);
+      if (onRemoteFoldersUpdate) onRemoteFoldersUpdate(allFinalFolders);
+      if (onRemoteProjectsUpdate) onRemoteProjectsUpdate(allFinalProjects);
+
+      // 5. Push any pending local items and backup user state to server
       await this.flushPendingSync();
     } catch (err) {
-      console.warn('Supabase reconcile warning (local remains 100% intact):', err);
+      console.warn('Reconciliation warning (local store is 100% safe):', err);
       this.updateStatus(this.isOnline ? 'error' : 'offline');
     }
   }
@@ -369,6 +402,39 @@ class SyncManagerService {
             updated_at: new Date().toISOString(),
           });
         } catch (e) {}
+      }
+
+      // 4. Server-Side User Account Snapshot Backup (Guarantees persistence across logout/re-login)
+      try {
+        const studentDoubtSessions = (() => {
+          try {
+            const raw = localStorage.getItem(`student_doubt_sessions_${userId}`) || localStorage.getItem('student_doubt_sessions_v2');
+            return raw ? JSON.parse(raw) : [];
+          } catch { return []; }
+        })();
+        const developerSessions = (() => {
+          try {
+            const raw = localStorage.getItem(`developer_ai_sessions_${userId}`) || localStorage.getItem('developer_ai_sessions_v1');
+            return raw ? JSON.parse(raw) : [];
+          } catch { return []; }
+        })();
+
+        await fetch(`/api/users/${encodeURIComponent(userId)}/data`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            notes: allNotes,
+            folders: allFolders,
+            projects: allProjects,
+            studentDoubtSessions,
+            developerSessions,
+          }),
+        });
+
+        // Also update local cache for this user
+        localStorage.setItem(`user_notes_cache_${userId}`, JSON.stringify(allNotes));
+      } catch (srvErr) {
+        console.warn('Server user backup sync skipped:', srvErr);
       }
 
       this.lastSyncTime = Date.now();

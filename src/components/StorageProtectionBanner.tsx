@@ -40,7 +40,7 @@ export function StorageProtectionBanner({ onOpenBackupModal }: StorageProtection
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => localStore.triggerFileDownloadBackup()}
+              onClick={() => (onOpenBackupModal ? onOpenBackupModal() : localStore.triggerFileDownloadBackup())}
               className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />

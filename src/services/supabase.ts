@@ -1,19 +1,49 @@
 import { createClient, SupabaseClient, User as SupabaseUser } from '@supabase/supabase-js';
 import { AuthUser, NoteItem, FolderItem, ProjectItem, FeedbackItem, AppBranding, AdminUserItem } from '../types';
 
-// Supabase Connection Credentials (with fallback to client env)
+// Supabase Connection Credentials (with fallback to client env & server endpoint)
 declare const window: any;
 const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
-const rawSupabaseUrl = (metaEnv.VITE_SUPABASE_URL || metaEnv.NEXT_PUBLIC_SUPABASE_URL || '').trim();
-const rawSupabaseKey = (metaEnv.VITE_SUPABASE_ANON_KEY || metaEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '').trim();
 
-function isValidHttpUrl(urlStr?: string): boolean {
+function getStoredCustomUrl(): string {
+  if (typeof window === 'undefined') return '';
+  return (localStorage.getItem('notebro_custom_supabase_url') || '').trim();
+}
+
+function getStoredCustomKey(): string {
+  if (typeof window === 'undefined') return '';
+  return (localStorage.getItem('notebro_custom_supabase_anon_key') || '').trim();
+}
+
+function getInitialSupabaseUrl(): string {
+  return (
+    getStoredCustomUrl() ||
+    metaEnv.VITE_SUPABASE_URL ||
+    metaEnv.NEXT_PUBLIC_SUPABASE_URL ||
+    ''
+  ).trim();
+}
+
+function getInitialSupabaseKey(): string {
+  return (
+    getStoredCustomKey() ||
+    metaEnv.VITE_SUPABASE_ANON_KEY ||
+    metaEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    ''
+  ).trim();
+}
+
+let currentSupabaseUrl = getInitialSupabaseUrl();
+let currentSupabaseKey = getInitialSupabaseKey();
+
+export function isValidHttpUrl(urlStr?: string): boolean {
   if (!urlStr || typeof urlStr !== 'string') return false;
   const trimmed = urlStr.trim();
   if (
     !trimmed ||
     trimmed.startsWith('YOUR_') ||
     trimmed.includes('your-project') ||
+    trimmed.includes('<project-ref>') ||
     trimmed === 'YOUR_SUPABASE_URL'
   ) {
     return false;
@@ -26,13 +56,15 @@ function isValidHttpUrl(urlStr?: string): boolean {
   }
 }
 
-function isValidKey(keyStr?: string): boolean {
+export function isValidKey(keyStr?: string): boolean {
   if (!keyStr || typeof keyStr !== 'string') return false;
   const trimmed = keyStr.trim();
   return (
     trimmed.length > 10 &&
     !trimmed.startsWith('YOUR_') &&
-    trimmed !== 'YOUR_SUPABASE_ANON_KEY'
+    trimmed !== 'YOUR_SUPABASE_ANON_KEY' &&
+    !trimmed.includes('<') &&
+    !trimmed.includes('...')
   );
 }
 
@@ -52,10 +84,51 @@ function createChainableQueryProxy(): any {
   return new Proxy({}, handler);
 }
 
-function initSupabaseClient(): SupabaseClient {
-  if (isValidHttpUrl(rawSupabaseUrl) && isValidKey(rawSupabaseKey)) {
+const mockFallbackAuth = {
+  onAuthStateChange: (_callback: any) => ({
+    data: { subscription: { unsubscribe: () => {} } },
+  }),
+  signUp: async () => ({
+    data: { user: null, session: null },
+    error: new Error('Supabase is not configured with a valid URL or Key.'),
+  }),
+  signInWithPassword: async () => ({
+    data: { user: null, session: null },
+    error: new Error('Supabase is not configured with a valid URL or Key.'),
+  }),
+  signOut: async () => ({ error: null }),
+  getSession: async () => ({ data: { session: null }, error: null }),
+  getUser: async () => ({ data: { user: null }, error: null }),
+  setSession: async () => ({ data: { session: null }, error: null }),
+  refreshSession: async () => ({ data: { session: null }, error: null }),
+  resetPasswordForEmail: async () => ({ data: {}, error: null }),
+  updateUser: async () => ({ data: { user: null }, error: null }),
+};
+
+const mockFallbackClient: any = {
+  auth: mockFallbackAuth,
+  from: (_table: string) => createChainableQueryProxy(),
+  rpc: (_fn: string) => createChainableQueryProxy(),
+  channel: () => ({
+    on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }),
+    subscribe: () => ({ unsubscribe: () => {} }),
+  }),
+  removeChannel: () => {},
+  storage: {
+    from: () => ({
+      upload: async () => ({ data: null, error: new Error('Supabase storage not configured') }),
+      getPublicUrl: () => ({ data: { publicUrl: '' } }),
+      download: async () => ({ data: null, error: new Error('Supabase storage not configured') }),
+    }),
+  },
+};
+
+let liveClientInstance: SupabaseClient | null = null;
+
+function buildRealClient(url: string, key: string): SupabaseClient | null {
+  if (isValidHttpUrl(url) && isValidKey(key)) {
     try {
-      return createClient(rawSupabaseUrl, rawSupabaseKey, {
+      return createClient(url, key, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -63,54 +136,145 @@ function initSupabaseClient(): SupabaseClient {
         },
       });
     } catch (err) {
-      console.warn('Failed to initialize Supabase client:', err);
+      console.warn('Could not initialize live Supabase client:', err);
     }
   }
-
-  // Graceful fallback mock client proxy when Supabase credentials are not configured
-  const mockAuth = {
-    onAuthStateChange: (_callback: any) => ({
-      data: { subscription: { unsubscribe: () => {} } },
-    }),
-    signUp: async () => ({
-      data: { user: null, session: null },
-      error: new Error('Supabase is not configured with a valid URL or Key.'),
-    }),
-    signInWithPassword: async () => ({
-      data: { user: null, session: null },
-      error: new Error('Supabase is not configured with a valid URL or Key.'),
-    }),
-    signOut: async () => ({ error: null }),
-    getSession: async () => ({ data: { session: null }, error: null }),
-    getUser: async () => ({ data: { user: null }, error: null }),
-    setSession: async () => ({ data: { session: null }, error: null }),
-    refreshSession: async () => ({ data: { session: null }, error: null }),
-    resetPasswordForEmail: async () => ({ data: {}, error: null }),
-    updateUser: async () => ({ data: { user: null }, error: null }),
-  };
-
-  const fallbackClient: any = {
-    auth: mockAuth,
-    from: (_table: string) => createChainableQueryProxy(),
-    rpc: (_fn: string) => createChainableQueryProxy(),
-    channel: () => ({
-      on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }),
-      subscribe: () => ({ unsubscribe: () => {} }),
-    }),
-    removeChannel: () => {},
-    storage: {
-      from: () => ({
-        upload: async () => ({ data: null, error: new Error('Supabase storage not configured') }),
-        getPublicUrl: () => ({ data: { publicUrl: '' } }),
-        download: async () => ({ data: null, error: new Error('Supabase storage not configured') }),
-      }),
-    },
-  };
-
-  return fallbackClient as unknown as SupabaseClient;
+  return null;
 }
 
-export const supabase: SupabaseClient = initSupabaseClient();
+// Initial live client build
+liveClientInstance = buildRealClient(currentSupabaseUrl, currentSupabaseKey);
+
+// Dynamic proxy so any calls to supabase always forward to the live instance if available
+export const supabase: SupabaseClient = new Proxy(mockFallbackClient, {
+  get(_target, prop) {
+    if (liveClientInstance) {
+      const val = (liveClientInstance as any)[prop];
+      if (typeof val === 'function') {
+        return val.bind(liveClientInstance);
+      }
+      return val;
+    }
+    return (mockFallbackClient as any)[prop];
+  },
+}) as unknown as SupabaseClient;
+
+export function isSupabaseConfigured(): boolean {
+  return Boolean(liveClientInstance && isValidHttpUrl(currentSupabaseUrl) && isValidKey(currentSupabaseKey));
+}
+
+export function getSupabaseConfig(): { url: string; isConfigured: boolean } {
+  return {
+    url: currentSupabaseUrl,
+    isConfigured: isSupabaseConfigured(),
+  };
+}
+
+export function updateSupabaseCredentials(url: string, key: string): boolean {
+  const cleanUrl = url.trim();
+  const cleanKey = key.trim();
+
+  if (isValidHttpUrl(cleanUrl) && isValidKey(cleanKey)) {
+    try {
+      const newClient = buildRealClient(cleanUrl, cleanKey);
+      if (newClient) {
+        liveClientInstance = newClient;
+        currentSupabaseUrl = cleanUrl;
+        currentSupabaseKey = cleanKey;
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('notebro_custom_supabase_url', cleanUrl);
+          localStorage.setItem('notebro_custom_supabase_anon_key', cleanKey);
+        }
+        console.log('✅ Supabase credentials updated & client connected successfully.');
+        return true;
+      }
+    } catch (e) {
+      console.error('Failed updating Supabase credentials:', e);
+    }
+  }
+  return false;
+}
+
+export async function triggerSupabaseKeepAlive(): Promise<{
+  success: boolean;
+  message: string;
+  latencyMs: number;
+  actionsPerformed: string[];
+  stats?: any;
+}> {
+  const startTime = Date.now();
+  const actions: string[] = [];
+
+  try {
+    // 1. Direct browser client query (if live client instance exists)
+    if (liveClientInstance) {
+      try {
+        await Promise.allSettled([
+          liveClientInstance.from('notes').select('id').limit(1),
+          liveClientInstance.from('projects').select('id').limit(1),
+          liveClientInstance.auth.getSession(),
+        ]);
+        actions.push('Browser Client Direct Postgres Query & Auth Read');
+      } catch (err: any) {
+        actions.push(`Browser client direct query warning: ${err?.message || 'ignored'}`);
+      }
+    }
+
+    // 2. Server-side deep keepalive ping (hits REST API root, Postgres tables, and Auth service)
+    const serverRes = await fetch('/api/supabase/keepalive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        supabaseUrl: currentSupabaseUrl,
+        supabaseAnonKey: currentSupabaseKey,
+      }),
+    });
+
+    if (serverRes.ok) {
+      const data = await serverRes.json();
+      return {
+        success: true,
+        message: data.message || 'Real user activity simulated successfully. Supabase free tier kept active!',
+        latencyMs: data.latencyMs || (Date.now() - startTime),
+        actionsPerformed: [...actions, ...(data.actionsPerformed || [])],
+        stats: data.stats,
+      };
+    } else {
+      const errorData = await serverRes.json().catch(() => ({}));
+      return {
+        success: false,
+        message: errorData.message || `Server keep-alive failed with status ${serverRes.status}`,
+        latencyMs: Date.now() - startTime,
+        actionsPerformed: actions,
+        stats: errorData.stats,
+      };
+    }
+  } catch (e: any) {
+    return {
+      success: false,
+      message: e?.message || 'Network error triggering Supabase keep-alive',
+      latencyMs: Date.now() - startTime,
+      actionsPerformed: actions,
+    };
+  }
+}
+
+// Auto-discovery from server environment on client startup
+if (typeof window !== 'undefined') {
+  setTimeout(async () => {
+    if (!isSupabaseConfigured()) {
+      try {
+        const res = await fetch('/api/config/supabase');
+        if (res.ok) {
+          const cfg = await res.json();
+          if (cfg?.configured && cfg.supabaseUrl && cfg.supabaseAnonKey) {
+            updateSupabaseCredentials(cfg.supabaseUrl, cfg.supabaseAnonKey);
+          }
+        }
+      } catch (_) {}
+    }
+  }, 100);
+}
 
 const STORAGE_SESSION_KEY = 'notebro_supabase_user_session';
 const AUTH_EVENT_NAME = 'notebro_supabase_auth_change';

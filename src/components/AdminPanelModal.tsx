@@ -21,9 +21,25 @@ import {
   Lightbulb,
   MessageCircle,
   Laptop,
+  Database,
+  KeyRound,
+  Link2,
+  Zap,
+  Activity,
+  Flame,
+  Terminal,
+  Play,
+  Pause,
+  Info,
 } from 'lucide-react';
 import { AppBranding, AdminUserItem, FeedbackItem, AuthUser } from '../types';
 import { adminService } from '../services/adminService';
+import {
+  isSupabaseConfigured,
+  getSupabaseConfig,
+  updateSupabaseCredentials,
+  triggerSupabaseKeepAlive,
+} from '../services/supabase';
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -38,7 +54,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   currentUser,
   totalNotesCount = 0,
 }) => {
-  const [activeTab, setActiveTab] = useState<'branding' | 'users' | 'feedback'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'users' | 'feedback' | 'database'>('branding');
 
   // Branding State
   const [branding, setBranding] = useState<AppBranding>(adminService.getBranding());
@@ -61,6 +77,138 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [expandedFeedbackId, setExpandedFeedbackId] = useState<string | null>(null);
   const [adminNoteInput, setAdminNoteInput] = useState<{ [id: string]: string }>({});
   const [previewAttachmentUrl, setPreviewAttachmentUrl] = useState<string | null>(null);
+
+  // Database / Supabase State
+  const [supabaseUrlInput, setSupabaseUrlInput] = useState(() => getSupabaseConfig().url);
+  const [supabaseKeyInput, setSupabaseKeyInput] = useState('');
+  const [supabaseLiveStatus, setSupabaseLiveStatus] = useState<{
+    tested: boolean;
+    connected: boolean;
+    message: string;
+    loading: boolean;
+  }>({
+    tested: false,
+    connected: false,
+    message: '',
+    loading: false,
+  });
+
+  // Anti-Pause / Real User Trigger State
+  const [isTriggeringKeepAlive, setIsTriggeringKeepAlive] = useState(false);
+  const [autoKeepAliveActive, setAutoKeepAliveActive] = useState<boolean>(() => {
+    return localStorage.getItem('notebro_auto_keepalive_active') === 'true';
+  });
+  const [keepAliveResult, setKeepAliveResult] = useState<{
+    success: boolean;
+    message: string;
+    latencyMs: number;
+    actionsPerformed: string[];
+    timestamp: string;
+    stats?: any;
+  } | null>(null);
+  const [keepAliveLogs, setKeepAliveLogs] = useState<Array<{
+    id: string;
+    time: string;
+    success: boolean;
+    latencyMs: number;
+    details: string;
+  }>>([]);
+
+  const checkSupabaseStatus = async () => {
+    setSupabaseLiveStatus((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await fetch('/api/supabase/status');
+      if (res.ok) {
+        const data = await res.json();
+        setSupabaseLiveStatus({
+          tested: true,
+          connected: !!data.connected,
+          message: data.message || (data.connected ? 'Connected successfully' : 'Not connected'),
+          loading: false,
+        });
+      } else {
+        setSupabaseLiveStatus({
+          tested: true,
+          connected: false,
+          message: `Server returned HTTP ${res.status}`,
+          loading: false,
+        });
+      }
+    } catch (e: any) {
+      setSupabaseLiveStatus({
+        tested: true,
+        connected: false,
+        message: e?.message || 'Failed to reach status endpoint',
+        loading: false,
+      });
+    }
+  };
+
+  const handleTriggerRealUserActivity = async () => {
+    setIsTriggeringKeepAlive(true);
+    try {
+      const res = await triggerSupabaseKeepAlive();
+      const timeStr = new Date().toLocaleTimeString();
+      setKeepAliveResult({
+        ...res,
+        timestamp: timeStr,
+      });
+      setKeepAliveLogs((prev) => [
+        {
+          id: Math.random().toString(36).substring(2, 9),
+          time: timeStr,
+          success: res.success,
+          latencyMs: res.latencyMs,
+          details: res.message,
+        },
+        ...prev.slice(0, 14),
+      ]);
+    } catch (err: any) {
+      const timeStr = new Date().toLocaleTimeString();
+      setKeepAliveResult({
+        success: false,
+        message: err?.message || 'Failed to send keep-alive',
+        latencyMs: 0,
+        actionsPerformed: ['Error executing query'],
+        timestamp: timeStr,
+      });
+    } finally {
+      setIsTriggeringKeepAlive(false);
+    }
+  };
+
+  // Auto keep-alive background interval effect
+  useEffect(() => {
+    if (!autoKeepAliveActive) return;
+
+    // Periodic trigger every 8 minutes
+    const interval = setInterval(() => {
+      handleTriggerRealUserActivity();
+    }, 8 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [autoKeepAliveActive]);
+
+  const toggleAutoKeepAlive = () => {
+    const nextState = !autoKeepAliveActive;
+    setAutoKeepAliveActive(nextState);
+    localStorage.setItem('notebro_auto_keepalive_active', String(nextState));
+    if (nextState) {
+      handleTriggerRealUserActivity();
+    }
+  };
+
+  const handleSaveSupabaseConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabaseUrlInput.trim() || !supabaseKeyInput.trim()) return;
+    const ok = updateSupabaseCredentials(supabaseUrlInput.trim(), supabaseKeyInput.trim());
+    if (ok) {
+      alert('Supabase credentials saved and client reconnected!');
+      checkSupabaseStatus();
+    } else {
+      alert('Invalid URL or Key format. Please verify the credentials.');
+    }
+  };
 
   const logoFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -260,6 +408,22 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           >
             <MessageSquare className="w-3.5 h-3.5" />
             <span>Reports ({feedbackList.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('database');
+              checkSupabaseStatus();
+            }}
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              activeTab === 'database'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Supabase Cloud</span>
           </button>
         </div>
 
@@ -758,6 +922,256 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* 4. DATABASE & SUPABASE CLOUD SYNC */}
+          {/* ========================================================================= */}
+          {activeTab === 'database' && (
+            <div className="max-w-2xl space-y-6">
+              {/* Status Banner */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2.5 rounded-xl ${
+                      supabaseLiveStatus.connected || isSupabaseConfigured()
+                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                        : 'bg-amber-50 text-amber-600 border border-amber-200'
+                    }`}>
+                      <Database className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Supabase Cloud Database</h3>
+                      <p className="text-xs text-slate-500">
+                        Real-time Postgres synchronization for notes, folders, projects, and user accounts.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={checkSupabaseStatus}
+                    disabled={supabaseLiveStatus.loading}
+                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${supabaseLiveStatus.loading ? 'animate-spin' : ''}`} />
+                    <span>Test Ping</span>
+                  </button>
+                </div>
+
+                {/* Connection Pill */}
+                <div className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
+                  supabaseLiveStatus.connected || isSupabaseConfigured()
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
+                    : 'bg-slate-50 border-slate-200 text-slate-700'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2.5 h-2.5 rounded-full ${
+                      supabaseLiveStatus.connected || isSupabaseConfigured()
+                        ? 'bg-emerald-500 animate-pulse'
+                        : 'bg-amber-400'
+                    }`} />
+                    <span className="font-semibold">
+                      {supabaseLiveStatus.tested
+                        ? supabaseLiveStatus.message
+                        : isSupabaseConfigured()
+                        ? 'Supabase Client Active (Configured)'
+                        : 'Local-First Mode (Offline Storage Active)'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono opacity-70">
+                    {getSupabaseConfig().url ? new URL(getSupabaseConfig().url).host : 'Local IndexedDB'}
+                  </span>
+                </div>
+              </div>
+
+              {/* ========================================================= */}
+              {/* FREE PLAN ANTI-PAUSE & REAL USER ACTIVITY GENERATOR */}
+              {/* ========================================================= */}
+              <div className="bg-linear-to-br from-indigo-900 via-slate-900 to-slate-950 text-white rounded-2xl p-5 shadow-md border border-indigo-500/20 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+                      <Zap className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-white">
+                          Supabase Free Tier Anti-Pause
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[10px] font-bold text-emerald-300">
+                          Active Keep-Alive
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Trigger real user activity so Supabase free project never gets paused (7-day rule bypass).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Auto Keep-Alive Toggle */}
+                  <button
+                    type="button"
+                    onClick={toggleAutoKeepAlive}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition cursor-pointer border ${
+                      autoKeepAliveActive
+                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-xs'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    {autoKeepAliveActive ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                        <span>Auto-Ping: ON</span>
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="w-3.5 h-3.5" />
+                        <span>Auto-Ping: OFF</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Explanation Card */}
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl text-xs text-slate-300 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p>
+                      <strong>Kaise kaam karta hai:</strong> Supabase free projects 7 din tak zero query hone par pause ho jate hain. Yeh button Supabase database aur Auth REST APIs ko real active queries bhejta hai (Postgres reads + token ping), jisse Supabase ko lagta hai real user website use kar raha hai aur project kabhi pause nahi hota!
+                    </p>
+                  </div>
+                </div>
+
+                {/* Trigger Action Controls */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleTriggerRealUserActivity}
+                    disabled={isTriggeringKeepAlive}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-linear-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Flame className={`w-4 h-4 text-slate-950 ${isTriggeringKeepAlive ? 'animate-spin' : ''}`} />
+                    <span>{isTriggeringKeepAlive ? 'Triggering Real User Activity...' : '⚡ Trigger Real User Activity Now'}</span>
+                  </button>
+
+                  {keepAliveResult && (
+                    <div className="text-[11px] text-slate-300 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span>Last Activity: <strong className="text-white">{keepAliveResult.timestamp}</strong></span>
+                      <span className="font-mono text-emerald-400">({keepAliveResult.latencyMs}ms)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Live Output & Action Diagnostics */}
+                {keepAliveResult && (
+                  <div className="p-3.5 bg-black/40 border border-white/10 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-mono text-emerald-400 flex items-center gap-1.5 font-bold">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {keepAliveResult.message}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {keepAliveResult.actionsPerformed.length} Requests Fired
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 pt-1 border-t border-white/5">
+                      {keepAliveResult.actionsPerformed.map((act, i) => (
+                        <div key={i} className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
+                          <span className="text-emerald-400">❯</span>
+                          <span>{act}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Activity History Logs */}
+                {keepAliveLogs.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-400">
+                      <span className="flex items-center gap-1">
+                        <Terminal className="w-3.5 h-3.5" />
+                        Recent Keep-Alive Audit Log
+                      </span>
+                      <span className="text-[10px] font-mono">{keepAliveLogs.length} logged</span>
+                    </div>
+                    <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                      {keepAliveLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="flex items-center justify-between text-[10px] font-mono bg-white/5 px-2.5 py-1.5 rounded-lg border border-white/5"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="text-emerald-400">●</span>
+                            <span className="text-slate-300">{log.time}</span>
+                            <span className="text-slate-400 truncate">Real User Keep-Alive Activity</span>
+                          </div>
+                          <span className="text-emerald-300 font-bold ml-2 shrink-0">{log.latencyMs}ms</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Supabase Connection Form */}
+              <form onSubmit={handleSaveSupabaseConfig} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1">
+                    Connect / Update Supabase Project
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Enter your Supabase Project URL and Anon API Key from Project Settings &gt; API.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Project URL (<code className="text-slate-500 font-mono">VITE_SUPABASE_URL</code>)
+                    </label>
+                    <div className="relative">
+                      <Link2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="url"
+                        placeholder="https://xyzcompany.supabase.co"
+                        value={supabaseUrlInput}
+                        onChange={(e) => setSupabaseUrlInput(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-slate-900 bg-slate-50/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Anon Public Key (<code className="text-slate-500 font-mono">VITE_SUPABASE_ANON_KEY</code>)
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="password"
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        value={supabaseKeyInput}
+                        onChange={(e) => setSupabaseKeyInput(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-slate-900 bg-slate-50/50"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition shadow-xs cursor-pointer"
+                  >
+                    Save &amp; Connect
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>
