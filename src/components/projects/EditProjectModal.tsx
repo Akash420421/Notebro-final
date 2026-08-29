@@ -1,0 +1,246 @@
+import React, { useState, useEffect } from 'react';
+import { AppMode, ProjectItem } from '../../types';
+import {
+  DEFAULT_PROJECT_ICONS,
+  PROJECT_COLOR_OPTIONS,
+} from '../../services/projectService';
+import { X, Save, Tag } from 'lucide-react';
+import { MODES } from '../ModeSelector';
+
+interface EditProjectModalProps {
+  isOpen: boolean;
+  project: ProjectItem | null;
+  onClose: () => void;
+  onSave: (updatedProject: ProjectItem) => void;
+}
+
+export const EditProjectModal: React.FC<EditProjectModalProps> = ({
+  isOpen,
+  project,
+  onClose,
+  onSave,
+}) => {
+  if (!isOpen || !project) return null;
+
+  const [name, setName] = useState(project.name || project.title || '');
+  const [description, setDescription] = useState(project.description || '');
+  const [icon, setIcon] = useState(project.icon || '📁');
+  const [color, setColor] = useState(project.color || '#6366f1');
+  const [deadline, setDeadline] = useState(project.deadline || '');
+  const [mode, setMode] = useState<AppMode>(project.mode || 'normal');
+  const [tagInput, setTagInput] = useState('');
+  const [tags, setTags] = useState<string[]>(project.tags || []);
+
+  const handleAddTag = () => {
+    if (!tagInput.trim()) return;
+    const clean = tagInput.trim().replace(/^#/, '');
+    if (!tags.includes(clean)) {
+      setTags([...tags, clean]);
+    }
+    setTagInput('');
+  };
+
+  const handleRemoveTag = (t: string) => {
+    setTags(tags.filter((item) => item !== t));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    const updated: ProjectItem = {
+      ...project,
+      title: name.trim(),
+      name: name.trim(),
+      description: description.trim(),
+      icon,
+      color,
+      deadline: deadline || undefined,
+      mode,
+      tags,
+      updatedAt: new Date().toISOString(),
+    };
+
+    onSave(updated);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-[0_16px_48px_rgba(0,0,0,0.12)] border border-slate-200/90 overflow-hidden my-auto animate-in fade-in zoom-in-95">
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl"
+              style={{ backgroundColor: `${color}15`, color }}
+            >
+              {icon}
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
+                Edit Project Settings
+              </h3>
+              <p className="text-xs text-slate-500">Update project name, goals & deadline</p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Project Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Description & Objectives
+            </label>
+            <textarea
+              rows={2}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Choose Icon
+              </label>
+              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl max-h-24 overflow-y-auto">
+                {DEFAULT_PROJECT_ICONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => setIcon(emoji)}
+                    className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center transition-all ${
+                      icon === emoji
+                        ? 'bg-white shadow-xs border border-indigo-300 scale-110'
+                        : 'hover:bg-slate-200/60'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Accent Theme
+              </label>
+              <div className="flex flex-wrap gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl max-h-24 overflow-y-auto items-center">
+                {PROJECT_COLOR_OPTIONS.map((c) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    onClick={() => setColor(c.hex)}
+                    className={`w-6 h-6 rounded-full transition-transform ${
+                      color === c.hex
+                        ? 'ring-2 ring-offset-2 ring-slate-800 scale-110'
+                        : 'hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                    title={c.name}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Target Deadline
+            </label>
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Project Tags
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Add tag (e.g. priority, frontend)"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddTag();
+                  }
+                }}
+                className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddTag}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+              >
+                Add
+              </button>
+            </div>
+
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {tags.map((t) => (
+                  <span
+                    key={t}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700"
+                  >
+                    #{t}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(t)}
+                      className="hover:text-red-500"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+            >
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

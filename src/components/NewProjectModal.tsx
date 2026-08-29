@@ -131,8 +131,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                         : 'border-slate-200 bg-slate-100/90 hover:bg-slate-200/80 text-slate-800'
                     }`}
                   >
-                    <div>
-                      {m.icon(isSelected)}
+                    <div className={isSelected ? 'text-white' : 'text-neutral-600'}>
+                      {m.icon}
                     </div>
                     <span className="text-xs font-bold leading-tight line-clamp-1">
                       {m.label}

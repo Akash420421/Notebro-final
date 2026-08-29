@@ -15,8 +15,8 @@ import { SkeletonNotesLoader } from './components/SkeletonLoader';
 import { NotesMasonryGrid } from './components/NotesMasonryGrid';
 import { EmptyState } from './components/EmptyState';
 import { NoteEditor } from './components/NoteEditor';
-import { NewProjectModal } from './components/NewProjectModal';
-import { ProjectDetailModal } from './components/ProjectDetailModal';
+import { CreateProjectModal } from './components/projects/CreateProjectModal';
+import { ProjectDetailView } from './components/projects/ProjectDetailView';
 import { OldProjectsList } from './components/OldProjectsList';
 import { MultiSelectActionBar } from './components/MultiSelectActionBar';
 import { UndoSnackbar } from './components/UndoSnackbar';
@@ -404,12 +404,28 @@ export default function App() {
   // Save Project
   const handleSaveProject = async (newProjData: Omit<ProjectItem, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newProject: ProjectItem = {
+      tasks: [],
+      files: [],
+      links: [],
+      tags: [],
       ...newProjData,
       id: `proj-${Date.now()}`,
       userId: currentUser?.uid || undefined,
       user_id: currentUser?.uid || undefined,
       createdAt: 'Just now',
       updatedAt: 'Just now',
+      activities:
+        newProjData.activities && newProjData.activities.length > 0
+          ? newProjData.activities
+          : [
+              {
+                id: `act-${Date.now()}`,
+                projectId: `proj-${Date.now()}`,
+                action: 'created',
+                description: `Created project "${newProjData.name || newProjData.title}"`,
+                timestamp: Date.now(),
+              },
+            ],
     };
 
     setProjects((prev) => {
@@ -422,6 +438,67 @@ export default function App() {
 
     await dbService.saveProject(newProject);
     await firestoreSyncService.syncProject(newProject);
+  };
+
+  // Duplicate Project
+  const handleDuplicateProject = async (proj: ProjectItem) => {
+    const newId = `proj-${Date.now()}`;
+    const duplicated: ProjectItem = {
+      ...proj,
+      id: newId,
+      title: `${proj.title || proj.name} (Copy)`,
+      name: proj.name ? `${proj.name} (Copy)` : undefined,
+      createdAt: 'Just now',
+      updatedAt: 'Just now',
+      activities: [
+        {
+          id: `act-${Date.now()}`,
+          projectId: newId,
+          action: 'created',
+          description: `Duplicated project from "${proj.title || proj.name}"`,
+          timestamp: Date.now(),
+        },
+      ],
+    };
+    await handleSaveProject(duplicated);
+  };
+
+  // Delete project from detail view with optional cascading note deletion
+  const handleDeleteProjectFromDetail = async (id: string, deleteAssociatedNotes?: boolean) => {
+    if (deleteAssociatedNotes) {
+      const associatedNotes = notes.filter((n) => n.projectId === id);
+      for (const note of associatedNotes) {
+        await handleDeleteNote(note.id);
+      }
+    } else {
+      const associatedNotes = notes.filter((n) => n.projectId === id);
+      for (const note of associatedNotes) {
+        await handleSaveNote({ ...note, projectId: undefined, updatedAt: Date.now() });
+      }
+    }
+    await handleDeleteProject(id);
+    setSelectedProject(null);
+  };
+
+  // Create new note directly linked inside a project
+  const handleCreateNoteInProject = (projId: string) => {
+    setNewNoteInitialType('text');
+    setEditingNote({
+      id: `note-${Date.now()}`,
+      type: 'text',
+      title: '',
+      body: '',
+      projectId: projId,
+      checklistItems: [],
+      tags: [],
+      images: [],
+      sketches: [],
+      isPinned: false,
+      mode: selectedMode === 'all' ? 'normal' : selectedMode,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    setIsCreatingNewNote(true);
   };
 
   // Update existing Project
@@ -870,193 +947,211 @@ export default function App() {
 
         {/* Scrollable Main Viewport */}
         <main className={`flex-1 px-4 sm:px-6 py-4 sm:py-6 space-y-5 overflow-y-auto pb-32 sm:pb-36 ${activeTab === 'profile' ? 'bg-[#F5F5F7]' : 'bg-white'}`}>
-          {activeTab === 'home' && (
+          {selectedProject ? (
+            <ProjectDetailView
+              project={selectedProject}
+              notes={notes}
+              folders={folders}
+              onBack={() => setSelectedProject(null)}
+              onUpdateProject={handleUpdateProject}
+              onDeleteProject={handleDeleteProjectFromDetail}
+              onOpenNote={(note) => setEditingNote(note)}
+              onCreateNote={handleCreateNoteInProject}
+              onSaveNote={handleSaveNote}
+              onDeleteNote={handleDeleteNote}
+              onDuplicateProject={handleDuplicateProject}
+            />
+          ) : (
             <>
-              {/* 1. Top Mode Switcher (Normal | Student | Developer | Build) */}
-              <section id="mode-switcher-section">
-                <ModeSelector
-                  selectedMode={selectedMode}
-                  onSelectMode={setSelectedMode}
-                />
-              </section>
+              {activeTab === 'home' && (
+                <>
+                  {/* 1. Top Mode Switcher (Normal | Student | Developer | Build) */}
+                  <section id="mode-switcher-section">
+                    <ModeSelector
+                      selectedMode={selectedMode}
+                      onSelectMode={setSelectedMode}
+                    />
+                  </section>
 
-              {/* 2. Full-Width Search Bar */}
-              <section id="search-section">
-                <SearchBar
-                  searchQuery={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  selectedMode={selectedMode}
-                  onSelectMode={setSelectedMode}
-                  selectedTag={selectedTag}
-                  onSelectTag={setSelectedTag}
-                  availableTags={availableTags}
-                />
-              </section>
+                  {/* 2. Full-Width Search Bar */}
+                  <section id="search-section">
+                    <SearchBar
+                      searchQuery={searchQuery}
+                      onSearchChange={setSearchQuery}
+                      selectedMode={selectedMode}
+                      onSelectMode={setSelectedMode}
+                      selectedTag={selectedTag}
+                      onSelectTag={setSelectedTag}
+                      availableTags={availableTags}
+                    />
+                  </section>
 
-              {/* Quick Actions (Adapted directly in Light Theme from requested UI) */}
-              <section id="quick-actions-section">
-                <QuickActions
-                  onNewNote={() => {
-                    setNewNoteInitialType('text');
-                    setIsCreatingNewNote(true);
-                  }}
-                  onNewProject={() => {
-                    setIsNewProjectModalOpen(true);
-                  }}
-                  onNewTag={(newTagName) => {
-                    setSelectedTag(newTagName);
-                  }}
-                  onImport={() => {
-                    setIsNotesFileModalOpen(true);
-                  }}
-                  onViewAll={() => {
-                    setActiveTab('projects');
-                  }}
-                />
-              </section>
+                  {/* Quick Actions (Adapted directly in Light Theme from requested UI) */}
+                  <section id="quick-actions-section">
+                    <QuickActions
+                      onNewNote={() => {
+                        setNewNoteInitialType('text');
+                        setIsCreatingNewNote(true);
+                      }}
+                      onNewProject={() => {
+                        setIsNewProjectModalOpen(true);
+                      }}
+                      onNewTag={(newTagName) => {
+                        setSelectedTag(newTagName);
+                      }}
+                      onImport={() => {
+                        setIsNotesFileModalOpen(true);
+                      }}
+                      onViewAll={() => {
+                        setActiveTab('projects');
+                      }}
+                    />
+                  </section>
 
-              {/* 3. Category / Folder Chips */}
-              <section id="folder-chips-section">
-                <FolderChips
-                  folders={folders}
-                  selectedFolderId={selectedFolderId}
-                  onSelectFolder={setSelectedFolderId}
-                  onCreateFolder={handleCreateFolder}
-                  onRenameFolder={handleRenameFolder}
-                  onDeleteFolder={handleDeleteFolder}
-                  folderCounts={folderCounts}
-                />
-              </section>
+                  {/* 3. Category / Folder Chips */}
+                  <section id="folder-chips-section">
+                    <FolderChips
+                      folders={folders}
+                      selectedFolderId={selectedFolderId}
+                      onSelectFolder={setSelectedFolderId}
+                      onCreateFolder={handleCreateFolder}
+                      onRenameFolder={handleRenameFolder}
+                      onDeleteFolder={handleDeleteFolder}
+                      folderCounts={folderCounts}
+                    />
+                  </section>
 
-              {/* 4. Ads / Tips Banner Carousel (Controlled via Admin Panel, Default: Hidden) */}
-              {branding.showAdsBanner && (
-                <section id="ads-banner-section">
-                  <AdsBanner slides={ADS_SLIDES} />
+                  {/* 4. Ads / Tips Banner Carousel (Controlled via Admin Panel, Default: Hidden) */}
+                  {branding.showAdsBanner && (
+                    <section id="ads-banner-section">
+                      <AdsBanner slides={ADS_SLIDES} />
+                    </section>
+                  )}
+
+                  {/* Active tag filter banner if filtered */}
+                  {selectedTag && (
+                    <div className="flex items-center justify-between bg-[#F2F4F7] px-3.5 py-2 rounded-xl text-xs">
+                      <span className="font-semibold text-neutral-700">
+                        Filtered by tag: <strong className="text-neutral-900">#{selectedTag}</strong>
+                      </span>
+                      <button
+                        onClick={() => setSelectedTag(null)}
+                        className="text-neutral-500 hover:text-neutral-900 font-bold text-[11px] cursor-pointer"
+                      >
+                        Clear tag
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 5. Notes Area (2-Column Masonry Grid, Skeleton Loader, or Centered Empty State) */}
+                  <section id="notes-grid-section">
+                    {isLoading ? (
+                      <SkeletonNotesLoader />
+                    ) : filteredNotes.length > 0 ? (
+                      <NotesMasonryGrid
+                        notes={filteredNotes}
+                        folders={folders}
+                        isMultiSelectMode={isMultiSelectMode}
+                        selectedNoteIds={selectedNoteIds}
+                        onSelectNote={(note) => setEditingNote(note)}
+                        onToggleSelectNote={handleToggleSelectNote}
+                        onDeleteNote={handleDeleteNote}
+                        onToggleArchiveNote={handleToggleArchiveNote}
+                        onTogglePinNote={handleTogglePinNote}
+                        onToggleChecklistItem={handleToggleChecklistItem}
+                        onTagClick={(tag) => setSelectedTag(tag === selectedTag ? null : tag)}
+                        onLongPressNote={handleStartMultiSelect}
+                      />
+                    ) : (
+                      <EmptyState
+                        hasFilter={Boolean(searchQuery || selectedTag || selectedFolderId !== 'all')}
+                        onClearFilter={() => {
+                          setSearchQuery('');
+                          setSelectedTag(null);
+                          setSelectedFolderId('all');
+                        }}
+                        onCreateNote={(type) => {
+                          setNewNoteInitialType(type);
+                          setIsCreatingNewNote(true);
+                        }}
+                      />
+                    )}
+                  </section>
+                </>
+              )}
+
+              {/* Workspace Tab: Full Projects & Notes Explorer */}
+              {activeTab === 'projects' && (
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-base font-bold text-neutral-900">All Projects & Notes</h2>
+                      <p className="text-xs text-neutral-500">
+                        {projects.length} projects • {notes.length} notes
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setIsNewProjectModalOpen(true)}
+                      className="px-3 py-1.5 bg-neutral-900 text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>New Project</span>
+                    </button>
+                  </div>
+
+                  {/* Old Projects in Workspace */}
+                  <OldProjectsList
+                    projects={projects}
+                    onSelectProject={(p) => setSelectedProject(p)}
+                    onDeleteProject={handleDeleteProject}
+                    onTogglePin={handleTogglePinProject}
+                  />
+
+                  {/* Notes in Workspace */}
+                  <div className="pt-2">
+                    <h3 className="text-sm font-bold text-neutral-900 mb-2">Saved Notes</h3>
+                    <NotesMasonryGrid
+                      notes={activeNotes}
+                      folders={folders}
+                      isMultiSelectMode={isMultiSelectMode}
+                      selectedNoteIds={selectedNoteIds}
+                      onSelectNote={(note) => setEditingNote(note)}
+                      onToggleSelectNote={handleToggleSelectNote}
+                      onDeleteNote={handleDeleteNote}
+                      onToggleArchiveNote={handleToggleArchiveNote}
+                      onTogglePinNote={handleTogglePinNote}
+                      onToggleChecklistItem={handleToggleChecklistItem}
+                      onTagClick={(tag) => setSelectedTag(tag)}
+                      onLongPressNote={handleStartMultiSelect}
+                    />
+                  </div>
                 </section>
               )}
 
-              {/* Active tag filter banner if filtered */}
-              {selectedTag && (
-                <div className="flex items-center justify-between bg-[#F2F4F7] px-3.5 py-2 rounded-xl text-xs">
-                  <span className="font-semibold text-neutral-700">
-                    Filtered by tag: <strong className="text-neutral-900">#{selectedTag}</strong>
-                  </span>
-                  <button
-                    onClick={() => setSelectedTag(null)}
-                    className="text-neutral-500 hover:text-neutral-900 font-bold text-[11px] cursor-pointer"
-                  >
-                    Clear tag
-                  </button>
-                </div>
-              )}
-
-              {/* 5. Notes Area (2-Column Masonry Grid, Skeleton Loader, or Centered Empty State) */}
-              <section id="notes-grid-section">
-                {isLoading ? (
-                  <SkeletonNotesLoader />
-                ) : filteredNotes.length > 0 ? (
-                  <NotesMasonryGrid
-                    notes={filteredNotes}
-                    folders={folders}
-                    isMultiSelectMode={isMultiSelectMode}
-                    selectedNoteIds={selectedNoteIds}
-                    onSelectNote={(note) => setEditingNote(note)}
-                    onToggleSelectNote={handleToggleSelectNote}
-                    onDeleteNote={handleDeleteNote}
-                    onToggleArchiveNote={handleToggleArchiveNote}
-                    onTogglePinNote={handleTogglePinNote}
-                    onToggleChecklistItem={handleToggleChecklistItem}
-                    onTagClick={(tag) => setSelectedTag(tag === selectedTag ? null : tag)}
-                    onLongPressNote={handleStartMultiSelect}
-                  />
-                ) : (
-                  <EmptyState
-                    hasFilter={Boolean(searchQuery || selectedTag || selectedFolderId !== 'all')}
-                    onClearFilter={() => {
-                      setSearchQuery('');
-                      setSelectedTag(null);
-                      setSelectedFolderId('all');
-                    }}
-                    onCreateNote={(type) => {
-                      setNewNoteInitialType(type);
-                      setIsCreatingNewNote(true);
-                    }}
-                  />
-                )}
-              </section>
-            </>
-          )}
-
-          {/* Workspace Tab: Full Projects & Notes Explorer */}
-          {activeTab === 'projects' && (
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-neutral-900">All Projects & Notes</h2>
-                  <p className="text-xs text-neutral-500">
-                    {projects.length} projects • {notes.length} notes
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsNewProjectModalOpen(true)}
-                  className="px-3 py-1.5 bg-neutral-900 text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>New Project</span>
-                </button>
-              </div>
-
-              {/* Old Projects in Workspace */}
-              <OldProjectsList
-                projects={projects}
-                onSelectProject={(p) => setSelectedProject(p)}
-                onDeleteProject={handleDeleteProject}
-                onTogglePin={handleTogglePinProject}
-              />
-
-              {/* Notes in Workspace */}
-              <div className="pt-2">
-                <h3 className="text-sm font-bold text-neutral-900 mb-2">Saved Notes</h3>
-                <NotesMasonryGrid
+              {/* Profile Tab */}
+              {activeTab === 'profile' && (
+                <ProfileView
                   notes={activeNotes}
+                  trashedNotes={trashedNotes}
                   folders={folders}
-                  isMultiSelectMode={isMultiSelectMode}
-                  selectedNoteIds={selectedNoteIds}
-                  onSelectNote={(note) => setEditingNote(note)}
-                  onToggleSelectNote={handleToggleSelectNote}
-                  onDeleteNote={handleDeleteNote}
-                  onToggleArchiveNote={handleToggleArchiveNote}
-                  onTogglePinNote={handleTogglePinNote}
-                  onToggleChecklistItem={handleToggleChecklistItem}
-                  onTagClick={(tag) => setSelectedTag(tag)}
-                  onLongPressNote={handleStartMultiSelect}
+                  currentUser={currentUser}
+                  selectedMode={selectedMode}
+                  onSelectMode={setSelectedMode}
+                  onImportData={handleImportNotesPackage}
+                  onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                  onOpenNotesFileModal={() => setIsNotesFileModalOpen(true)}
+                  onOpenTrashModal={() => setIsTrashModalOpen(true)}
+                  onOpenFeedbackModal={() => setIsFeedbackModalOpen(true)}
+                  onOpenAdminModal={() => setIsAdminModalOpen(true)}
+                  onOpenInstallModal={() => setIsInstallModalOpen(true)}
                 />
-              </div>
-            </section>
-          )}
-
-          {/* Profile Tab */}
-          {activeTab === 'profile' && (
-            <ProfileView
-              notes={activeNotes}
-              trashedNotes={trashedNotes}
-              folders={folders}
-              currentUser={currentUser}
-              selectedMode={selectedMode}
-              onSelectMode={setSelectedMode}
-              onImportData={handleImportNotesPackage}
-              onOpenAuthModal={() => setIsAuthModalOpen(true)}
-              onOpenNotesFileModal={() => setIsNotesFileModalOpen(true)}
-              onOpenTrashModal={() => setIsTrashModalOpen(true)}
-              onOpenFeedbackModal={() => setIsFeedbackModalOpen(true)}
-              onOpenAdminModal={() => setIsAdminModalOpen(true)}
-              onOpenInstallModal={() => setIsInstallModalOpen(true)}
-            />
+              )}
+            </>
           )}
         </main>
 
         {/* Floating Action Button (Warm Golden-Amber MIUI/Android '+' Button) */}
-        {!isMultiSelectMode && !editingNote && !isCreatingNewNote && activeTab === 'home' && (
+        {!isMultiSelectMode && !editingNote && !isCreatingNewNote && !selectedProject && activeTab === 'home' && (
           <FloatingActionButton
             onCreateNote={(type) => {
               setNewNoteInitialType(type);
@@ -1093,7 +1188,10 @@ export default function App() {
           <div className="w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl pointer-events-auto">
             <BottomNav
               activeTab={activeTab}
-              onTabChange={setActiveTab}
+              onTabChange={(tab) => {
+                setSelectedProject(null);
+                setActiveTab(tab);
+              }}
               notesCount={activeNotes.length}
               projectsCount={projects.length}
             />
@@ -1102,23 +1200,11 @@ export default function App() {
       </div>
 
       {/* New Project Creation Modal */}
-      <NewProjectModal
+      <CreateProjectModal
         isOpen={isNewProjectModalOpen}
         onClose={() => setIsNewProjectModalOpen(false)}
         onSave={handleSaveProject}
         initialMode={selectedMode === 'all' ? 'normal' : selectedMode}
-      />
-
-      {/* Project Detail View & Edit Modal */}
-      <ProjectDetailModal
-        project={selectedProject}
-        onClose={() => setSelectedProject(null)}
-        onUpdate={handleUpdateProject}
-        onDelete={(id) => {
-          handleDeleteProject(id);
-          setSelectedProject(null);
-        }}
-        onTogglePin={(id) => handleTogglePinProject(id)}
       />
 
       {/* Note Editor Overlay */}
@@ -1127,7 +1213,9 @@ export default function App() {
           initialNote={editingNote}
           initialType={newNoteInitialType}
           folders={folders}
+          projects={projects}
           currentFolderId={selectedFolderId}
+          currentProjectId={editingNote?.projectId || selectedProject?.id}
           currentMode={selectedMode === 'all' ? 'normal' : selectedMode}
           onClose={() => {
             setEditingNote(null);

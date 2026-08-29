@@ -150,6 +150,7 @@ export interface NoteItem {
   devVideos?: DevVideoResourceItem[];
 
   folderId?: string; // ID of folder, or undefined/'uncategorised'
+  projectId?: string; // Optional ID of parent Project entity
   tags: NoteTag[];
   isPinned: boolean;
   isArchived?: boolean; // Safe storage archive flag
@@ -283,20 +284,91 @@ export interface ApiEndpointItem {
   description: string;
 }
 
+export interface ProjectTask {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  completed: boolean;
+  priority?: 'low' | 'medium' | 'high';
+  dueDate?: string; // YYYY-MM-DD
+  isPinned?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ProjectFile {
+  id: string;
+  projectId: string;
+  name: string;
+  url: string; // Base64 data URL or external URL
+  size?: number; // in bytes
+  type?: string; // mime type / extension
+  isPinned?: boolean;
+  createdAt: number;
+}
+
+export interface ProjectLink {
+  id: string;
+  projectId: string;
+  title: string;
+  url: string;
+  description?: string;
+  isPinned?: boolean;
+  createdAt: number;
+}
+
+export interface ProjectActivityItem {
+  id: string;
+  projectId: string;
+  action:
+    | 'created'
+    | 'updated'
+    | 'note_added'
+    | 'note_removed'
+    | 'task_added'
+    | 'task_completed'
+    | 'task_uncompleted'
+    | 'task_deleted'
+    | 'file_added'
+    | 'file_deleted'
+    | 'link_added'
+    | 'link_deleted'
+    | 'pinned'
+    | 'unpinned'
+    | 'archived'
+    | 'restored';
+  description: string;
+  targetTitle?: string;
+  timestamp: number;
+}
+
 export interface ProjectItem {
   id: string;
   userId?: string;
   user_id?: string;
-  title: string;
+  title: string; // Project Name
+  name?: string; // Alias for name
   subtitle?: string;
   description: string;
+  icon?: string; // Emoji icon (e.g. 🚀, 📁, 💻, 📚, 🎯, 💡, 🛒, ❤️)
+  color?: string; // Color identifier / hex
+  status?: 'active' | 'in-progress' | 'completed' | 'archived';
+  progress?: number; // 0 - 100 dynamically calculated
+  deadline?: string; // YYYY-MM-DD
   mode: AppMode;
   createdAt: string;
   updatedAt: string;
   tags: string[];
   isPinned?: boolean;
-  color?: string;
+  isArchived?: boolean;
   coverGradient?: string;
+  
+  // Child Workspace Entities
+  tasks?: ProjectTask[];
+  files?: ProjectFile[];
+  links?: ProjectLink[];
+  activities?: ProjectActivityItem[];
   
   // Student Mod Data
   studentData?: {

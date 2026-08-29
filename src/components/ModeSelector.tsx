@@ -10,30 +10,24 @@ interface ModeSelectorProps {
 interface ModeItem {
   id: AppMode;
   label: string;
-  icon: (isSelected: boolean) => React.ReactNode;
+  icon: React.ReactNode;
 }
 
 export const MODES: ModeItem[] = [
   {
     id: 'normal',
     label: 'Normal',
-    icon: (isSelected) => (
-      <FileText className={`w-5 h-5 transition-transform ${isSelected ? 'text-white' : 'text-[#2563EB]'}`} />
-    ),
+    icon: <FileText className="w-4 h-4" />,
   },
   {
     id: 'student',
     label: 'Student',
-    icon: (isSelected) => (
-      <BookOpen className={`w-5 h-5 transition-transform ${isSelected ? 'text-white' : 'text-[#2563EB]'}`} />
-    ),
+    icon: <BookOpen className="w-4 h-4" />,
   },
   {
     id: 'developer',
     label: 'Developer',
-    icon: (isSelected) => (
-      <Code className={`w-5 h-5 transition-transform ${isSelected ? 'text-white' : 'text-[#2563EB]'}`} />
-    ),
+    icon: <Code className="w-4 h-4" />,
   },
 ];
 
@@ -43,40 +37,26 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
 }) => {
   return (
     <div className="w-full">
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-3 gap-2 bg-neutral-100/80 p-1 rounded-xl border border-neutral-200/80">
         {MODES.map((mode) => {
           const isSelected = selectedMode === mode.id;
           return (
-            <div key={mode.id} className="flex flex-col items-center">
-              <button
-                id={`mode-btn-${mode.id}`}
-                onClick={() => onSelectMode(mode.id)}
-                className={`w-full py-3.5 px-2 rounded-[22px] flex flex-col items-center justify-center text-center transition-all duration-150 cursor-pointer select-none active:scale-95 ${
-                  isSelected
-                    ? 'bg-[#0B1527] text-white shadow-md'
-                    : 'bg-white text-slate-900 border border-slate-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.02)] hover:bg-slate-50'
-                }`}
-                title={`Switch to ${mode.label} mode`}
-              >
-                <div className="mb-0.5">
-                  {mode.icon(isSelected)}
-                </div>
-                <span
-                  className={`font-bold text-xs sm:text-sm leading-tight tracking-tight ${
-                    isSelected ? 'text-white' : 'text-slate-900'
-                  }`}
-                >
-                  {mode.label}
-                </span>
-              </button>
-
-              {/* Exact blue indicator underline */}
-              <div
-                className={`h-1 w-8 rounded-full mt-1.5 transition-all ${
-                  isSelected ? 'bg-[#2563EB]' : 'bg-transparent'
-                }`}
-              />
-            </div>
+            <button
+              key={mode.id}
+              id={`mode-btn-${mode.id}`}
+              onClick={() => onSelectMode(mode.id)}
+              className={`py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 text-center transition-all duration-150 cursor-pointer select-none text-xs font-medium ${
+                isSelected
+                  ? 'bg-white text-neutral-900 shadow-xs font-semibold'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-white/50'
+              }`}
+              title={`Switch to ${mode.label} mode`}
+            >
+              <span className={isSelected ? 'text-neutral-900' : 'text-neutral-500'}>
+                {mode.icon}
+              </span>
+              <span>{mode.label}</span>
+            </button>
           );
         })}
       </div>

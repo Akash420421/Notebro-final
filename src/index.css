@@ -212,5 +212,36 @@ html.dark .glass-card-elevated {
   font-size: 0.95rem;
   line-height: 1.5;
   color: #1e293b;
+  word-break: break-word;
+}
+
+/* Code block & Pre formatting for rich-note-editor */
+.rich-note-editor pre {
+  background-color: #f1f5f9;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  max-width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border: 1px solid #e2e8f0;
+}
+
+.rich-note-editor code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  background-color: #f1f5f9;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  word-break: break-word;
+}
+
+.rich-note-editor pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  word-break: normal;
 }
 

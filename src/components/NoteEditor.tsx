@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   NoteItem,
   FolderItem,
+  ProjectItem,
   NoteTag,
   TAG_COLORS,
-  ChecklistItem,
   AppMode,
   YoutubeLink,
   WebResourceLink,
@@ -16,13 +16,7 @@ import {
   DevVideoResourceItem,
 } from '../types';
 import { SketchCanvasModal } from './SketchCanvasModal';
-import { StudentImportantQuestionsSection } from './StudentImportantQuestionsSection';
-import { StudentMediaLinksSection } from './StudentMediaLinksSection';
-import { DevApiKeysSection } from './DevApiKeysSection';
-import { DevPromptBoxesSection } from './DevPromptBoxesSection';
-import { DevSpecFilesSection } from './DevSpecFilesSection';
-import { DevWebsitesCredentialsSection } from './DevWebsitesCredentialsSection';
-import { DevVideoResourcesSection } from './DevVideoResourcesSection';
+import { NoteResourcesManager } from './NoteResourcesManager';
 import {
   ArrowLeft,
   Pin,
@@ -38,42 +32,39 @@ import {
   Italic,
   Underline,
   Heading1,
-  Heading2,
   List,
   ListOrdered,
   Minus,
   Quote,
-  CheckCircle2,
-  Circle,
   ChevronDown,
   Image as ImageIcon,
   PenTool,
   Highlighter,
-  Camera,
-  FolderPlus,
-  Strikethrough,
   Palette,
-  GraduationCap,
-  Youtube,
-  Globe,
-  Star,
-  BookOpen,
   Key,
   MessageSquareCode,
   FileCode,
-  Terminal,
-  Code,
-  Lock,
+  Globe,
   Video,
+  HelpCircle,
+  Link2,
   Loader2,
+  Layers,
+  MoreVertical,
+  GraduationCap,
+  Code,
+  BookOpen,
+  Calculator,
 } from 'lucide-react';
 
 interface NoteEditorProps {
   initialNote?: NoteItem | null;
   initialType?: 'text' | 'checklist' | 'sketch';
   folders: FolderItem[];
+  projects?: ProjectItem[];
   currentFolderId?: string | 'all' | 'uncategorised';
-  currentMode?: AppMode;
+  currentProjectId?: string;
+  currentMode?: AppMode | 'all';
   onClose: () => void;
   onSave: (note: NoteItem) => void;
   onDelete: (id: string) => void;
@@ -86,6 +77,19 @@ export const HIGHLIGHT_PALETTE = [
   { name: 'Pink', bg: '#FBCFE8', text: '#9D174D', border: '#F472B6', dot: '#EC4899' },
   { name: 'Cyan', bg: '#BAE6FD', text: '#075985', border: '#7DD3FC', dot: '#06B6D4' },
   { name: 'Orange', bg: '#FED7AA', text: '#9A3412', border: '#FDBA74', dot: '#F97316' },
+];
+
+const STUDENT_SUBJECTS = [
+  'Mathematics',
+  'Physics',
+  'Chemistry',
+  'Biology',
+  'Computer Science',
+  'History',
+  'Literature',
+  'Economics',
+  'Psychology',
+  'Engineering',
 ];
 
 const convertMarkdownToRichHtml = (content: string): string => {
@@ -126,7 +130,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   initialNote,
   initialType = 'text',
   folders,
+  projects = [],
   currentFolderId,
+  currentProjectId,
   currentMode = 'normal',
   onClose,
   onSave,
@@ -134,8 +140,18 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   onCreateFolder,
 }) => {
   const isNewNote = !initialNote;
-  const isStudentMod = currentMode === 'student' || initialNote?.mode === 'student';
-  const isDeveloperMod = currentMode === 'developer' || initialNote?.mode === 'developer';
+
+  // Note Mode State (Normal | Student | Developer)
+  const [noteMode, setNoteMode] = useState<AppMode>(
+    initialNote?.mode || (currentMode === 'all' ? 'normal' : currentMode) || 'normal'
+  );
+  const [showModePicker, setShowModePicker] = useState(false);
+
+  // Student specific metadata
+  const [studentSubject, setStudentSubject] = useState<string>(initialNote?.studentSubject || '');
+  const [showSubjectPicker, setShowSubjectPicker] = useState(false);
+  const [customSubjectInput, setCustomSubjectInput] = useState('');
+  const [quickFormulas, setQuickFormulas] = useState<string[]>(initialNote?.quickFormulas || []);
 
   // Note Metadata State
   const [noteId] = useState<string>(initialNote ? initialNote.id : `note-${Date.now()}`);
@@ -150,24 +166,20 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       ? currentFolderId
       : undefined
   );
+  const [projectId, setProjectId] = useState<string | undefined>(
+    initialNote?.projectId || currentProjectId
+  );
   const [tags, setTags] = useState<NoteTag[]>(initialNote ? initialNote.tags || [] : []);
   const [isPinned, setIsPinned] = useState<boolean>(initialNote ? initialNote.isPinned : false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const [justSaved, setJustSaved] = useState<boolean>(false);
-  const [lastSavedTime, setLastSavedTime] = useState<string>('');
 
-  // Student Mod Rich Fields
+  // Rich Resources State
   const [youtubeLinks, setYoutubeLinks] = useState<YoutubeLink[]>(initialNote?.youtubeLinks || []);
   const [webLinks, setWebLinks] = useState<WebResourceLink[]>(initialNote?.webLinks || []);
   const [importantQuestions, setImportantQuestions] = useState<ImportantQuestion[]>(
     initialNote?.importantQuestions || []
   );
-  const [studentSubject, setStudentSubject] = useState<string>(initialNote?.studentSubject || '');
-  const [isAddingYoutube, setIsAddingYoutube] = useState(false);
-  const [isAddingWebLink, setIsAddingWebLink] = useState(false);
-  const [isAddingQuestion, setIsAddingQuestion] = useState(false);
-
-  // Developer Mod Rich Fields
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>(initialNote?.apiKeys || []);
   const [promptBoxes, setPromptBoxes] = useState<PromptBoxItem[]>(initialNote?.promptBoxes || []);
   const [specFiles, setSpecFiles] = useState<SpecFileItem[]>(initialNote?.specFiles || []);
@@ -176,21 +188,18 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   );
   const [devVideos, setDevVideos] = useState<DevVideoResourceItem[]>(initialNote?.devVideos || []);
 
-  // Developer Mod External Add Triggers
-  const [isAddingApiKey, setIsAddingApiKey] = useState(false);
-  const [isAddingPromptBox, setIsAddingPromptBox] = useState(false);
-  const [isAddingSpecFile, setIsAddingSpecFile] = useState(false);
-  const [isAddingDevWebsite, setIsAddingDevWebsite] = useState(false);
-  const [isAddingDevVideo, setIsAddingDevVideo] = useState(false);
-
-  // Popups & Modal State
+  // UI Popups & Menus
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [selectedTagColor, setSelectedTagColor] = useState(TAG_COLORS[3]);
   const [showSketchStudio, setShowSketchStudio] = useState(initialType === 'sketch');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [activeAddResourceModal, setActiveAddResourceModal] = useState<string | null>(null);
 
   // Highlighter Color Selector State
   const [activeHighlightColor, setActiveHighlightColor] = useState(HIGHLIGHT_PALETTE[0]);
@@ -203,7 +212,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const savedSelectionRef = useRef<Range | null>(null);
 
-  // Continuously track text selection within the rich editor so mobile tap never loses selection
+  // Track selection
   useEffect(() => {
     const handleSelectionChange = () => {
       const selection = window.getSelection();
@@ -223,7 +232,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     };
   }, []);
 
-  // Initialize Rich ContentEditable with note content
+  // Initialize Rich ContentEditable
   useEffect(() => {
     if (editorRef.current) {
       if (initialNote && initialNote.body) {
@@ -243,7 +252,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   }, [isNewNote, initialType]);
 
-  // Derive plain text title if not manually entered
   const getEffectiveTitle = () => {
     if (title.trim()) return title.trim();
     if (editorRef.current) {
@@ -260,7 +268,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     return '';
   };
 
-  // Sync Rich Editor input
   const handleEditorInput = useCallback(() => {
     if (editorRef.current) {
       const html = editorRef.current.innerHTML;
@@ -269,7 +276,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   }, []);
 
-  // Restore saved selection
   const restoreSelection = () => {
     if (savedSelectionRef.current && editorRef.current) {
       editorRef.current.focus();
@@ -281,7 +287,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   };
 
-  // Execute standard formatting commands (Bold, Italic, Underline, Lists, etc.)
   const executeFormat = (command: string, value: string | undefined = undefined) => {
     if (editorRef.current) {
       editorRef.current.focus();
@@ -291,7 +296,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   };
 
-  // True Rich Highlighter Tool (Immediate apply + toggle)
   const handleApplyHighlight = (customColor?: typeof HIGHLIGHT_PALETTE[0]) => {
     const colorToUse = customColor || activeHighlightColor;
     if (customColor) {
@@ -305,7 +309,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
 
-    // Check if selected range is already inside a <mark> (toggle off)
     let parentMark: HTMLElement | null = null;
     let node: Node | null = selection.anchorNode;
     while (node && node !== editorRef.current) {
@@ -317,7 +320,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
 
     if (parentMark) {
-      // Remove highlight: replace mark with its text contents
       const parent = parentMark.parentNode;
       while (parentMark.firstChild) {
         parent?.insertBefore(parentMark.firstChild, parentMark);
@@ -328,7 +330,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
 
     if (selection.isCollapsed) {
-      // If no text selected, select the current word
       selection.modify('move', 'backward', 'word');
       selection.modify('extend', 'forward', 'word');
     }
@@ -351,7 +352,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   };
 
-  // Insert or Toggle In-Note To-Do Checklist Item
   const insertTodoItem = () => {
     if (!editorRef.current) return;
     editorRef.current.focus();
@@ -359,7 +359,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
-      // Append to the bottom if no selection
       const todoDiv = createTodoElement('To-do task...');
       editorRef.current.appendChild(todoDiv);
       handleEditorInput();
@@ -372,7 +371,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     range.deleteContents();
     range.insertNode(todoDiv);
 
-    // Focus cursor inside the newly created todo text element
     const textSpan = todoDiv.querySelector('.todo-text') as HTMLElement;
     if (textSpan) {
       textSpan.focus();
@@ -387,7 +385,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     handleEditorInput();
   };
 
-  // Helper to construct clean To-Do DOM Element
   const createTodoElement = (initialText: string = ''): HTMLDivElement => {
     const container = document.createElement('div');
     container.className = 'rich-todo-item flex items-start gap-2 my-1 py-0.5';
@@ -409,7 +406,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     return container;
   };
 
-  // Handle Click inside Editor (Toggling Checkbox)
   const handleEditorClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (
@@ -434,15 +430,15 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   };
 
-  // Smart Keyboard Handler for Enter, Backspace in Rich Editor & To-Dos
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
 
     const anchor = selection.anchorNode;
-    const todoItem = anchor instanceof HTMLElement
-      ? anchor.closest('.rich-todo-item')
-      : anchor?.parentElement?.closest('.rich-todo-item');
+    const todoItem =
+      anchor instanceof HTMLElement
+        ? anchor.closest('.rich-todo-item')
+        : anchor?.parentElement?.closest('.rich-todo-item');
 
     if (todoItem) {
       const textSpan = todoItem.querySelector('.todo-text') as HTMLElement;
@@ -452,7 +448,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         e.preventDefault();
 
         if (!textContent) {
-          // Empty todo item: Pressing Enter turns it into a normal paragraph
           const p = document.createElement('p');
           p.innerHTML = '<br>';
           todoItem.parentNode?.replaceChild(p, todoItem);
@@ -463,7 +458,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           selection.removeAllRanges();
           selection.addRange(range);
         } else {
-          // Non-empty todo item: Pressing Enter creates a new To-Do line right after
           const newTodo = createTodoElement('');
           todoItem.parentNode?.insertBefore(newTodo, todoItem.nextSibling);
 
@@ -498,7 +492,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
   };
 
-  // Construct current complete note object
   const buildCurrentNoteObject = (): NoteItem | null => {
     const effectiveTitle = getEffectiveTitle();
     const currentHtml = editorRef.current ? editorRef.current.innerHTML : body;
@@ -511,6 +504,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       youtubeLinks.length > 0 ||
       webLinks.length > 0 ||
       importantQuestions.length > 0 ||
+      quickFormulas.length > 0 ||
+      studentSubject.trim() ||
       apiKeys.length > 0 ||
       promptBoxes.length > 0 ||
       specFiles.length > 0 ||
@@ -530,26 +525,23 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       youtubeLinks,
       webLinks,
       importantQuestions,
-      studentSubject: studentSubject.trim() || undefined,
+      studentSubject: noteMode === 'student' ? studentSubject.trim() || undefined : undefined,
+      quickFormulas: quickFormulas.length > 0 ? quickFormulas : undefined,
       apiKeys,
       promptBoxes,
       specFiles,
       devWebsites,
       devVideos,
       folderId,
+      projectId,
       tags,
       isPinned,
-      mode: isDeveloperMod
-        ? 'developer'
-        : isStudentMod
-        ? 'student'
-        : (initialNote ? initialNote.mode : (currentMode || 'normal')),
+      mode: noteMode,
       createdAt: initialNote ? initialNote.createdAt : Date.now(),
       updatedAt: Date.now(),
     };
   };
 
-  // Instant Manual Save Function triggered by user button click
   const handleManualSave = () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -561,13 +553,11 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }
     setSaveStatus('saved');
     setJustSaved(true);
-    setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     setTimeout(() => {
       setJustSaved(false);
     }, 2000);
   };
 
-  // Debounced auto-save function
   const triggerAutoSave = () => {
     setSaveStatus('saving');
     if (saveTimeoutRef.current) {
@@ -583,7 +573,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     }, 500);
   };
 
-  // Auto-save on metadata change
   useEffect(() => {
     triggerAutoSave();
     return () => {
@@ -591,57 +580,25 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     };
   }, [
     title,
+    noteMode,
+    studentSubject,
+    quickFormulas,
     images,
     sketches,
     youtubeLinks,
     webLinks,
     importantQuestions,
-    studentSubject,
     apiKeys,
     promptBoxes,
     specFiles,
     devWebsites,
     devVideos,
     folderId,
+    projectId,
     tags,
     isPinned,
   ]);
 
-  // RISK 1: Extra save triggers — blur, visibilitychange, beforeunload
-  useEffect(() => {
-    const flushSaveNow = () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      const noteToPersist = buildCurrentNoteObject();
-      if (noteToPersist) {
-        setSaveStatus('saving');
-        onSave(noteToPersist);
-        setSaveStatus('saved');
-        setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        flushSaveNow();
-      }
-    };
-
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      flushSaveNow();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [title, body, images, sketches, youtubeLinks, webLinks, importantQuestions, studentSubject, apiKeys, promptBoxes, specFiles, devWebsites, devVideos, folderId, tags, isPinned]);
-
-  // Handle back button / closing (Immediate synchronous save before unmounting)
   const handleBack = () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -653,7 +610,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     onClose();
   };
 
-  // Image Upload Handlers
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -678,7 +634,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     setImages((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  // Sketch Studio Handlers
   const handleSaveSketch = (dataUrl: string) => {
     setSketches((prev) => [...prev, dataUrl]);
   };
@@ -687,7 +642,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     setSketches((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  // Custom Folder Creation handler
   const handleCreateCustomFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = newFolderNameInput.trim();
@@ -703,7 +657,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     setShowFolderPicker(false);
   };
 
-  // Tag Handlers
   const handleAddTag = (e: React.FormEvent) => {
     e.preventDefault();
     const clean = newTagInput.trim().replace(/^#/, '');
@@ -717,11 +670,11 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     setTags(tags.filter((t) => t.name !== tagName));
   };
 
-  // Active folder name
   const currentFolder = folders.find((f) => f.id === folderId);
+  const currentProject = projects?.find((p) => p.id === projectId);
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#F7F4EE]/30 backdrop-blur-xl bg-white flex flex-col justify-between overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200">
+    <div className="fixed inset-0 z-50 bg-white flex flex-col justify-between overflow-hidden animate-in fade-in duration-150">
       {/* Hidden File Input for Image Uploads */}
       <input
         ref={fileInputRef}
@@ -732,47 +685,238 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         className="hidden"
       />
 
-      {/* 1. TOP APP BAR - Precision Mobile & Desktop Layout */}
-      <div className="w-full px-2.5 sm:px-4 py-2 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between sticky top-0 z-20 shrink-0 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-        {/* Left: Back button & Folder / Subject Selector */}
-        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+      {/* 1. TOP APP BAR - Responsive, Mode-Aware, Zero Mobile Overlap */}
+      <div className="w-full px-2.5 sm:px-5 py-2 sm:py-2.5 bg-white border-b border-neutral-200/80 flex items-center justify-between sticky top-0 z-20 shrink-0 gap-1.5 min-w-0">
+        {/* Left: Back button & Mode / Category pills */}
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
           <button
             id="editor-back-btn"
             onClick={handleBack}
-            className="p-1.5 -ml-1 rounded-full text-slate-800 hover:bg-slate-100 active:scale-95 transition cursor-pointer shrink-0"
-            title="Back (Auto-saved)"
+            className="p-1.5 -ml-1 rounded-lg text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 transition cursor-pointer shrink-0"
+            title="Back"
           >
-            <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
+            <ArrowLeft className="w-4 h-4" />
           </button>
 
-          {/* Folder Assignment Button */}
+          {/* Mode Switcher Pill */}
           <div className="relative shrink-0">
             <button
-              onClick={() => setShowFolderPicker(!showFolderPicker)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-[#EAF1FB] hover:bg-[#DCE9FA] text-[#3B66CC] transition cursor-pointer border border-[#D4E4FA]/80 shadow-2xs"
+              onClick={() => {
+                setShowModePicker(!showModePicker);
+                setShowFolderPicker(false);
+                setShowProjectPicker(false);
+                setShowSubjectPicker(false);
+              }}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                noteMode === 'student'
+                  ? 'bg-blue-50/80 border-blue-200 text-blue-700 hover:bg-blue-100/70'
+                  : noteMode === 'developer'
+                  ? 'bg-purple-50/80 border-purple-200 text-purple-700 hover:bg-purple-100/70'
+                  : 'bg-neutral-100/80 border-neutral-200 text-neutral-700 hover:bg-neutral-200/70'
+              }`}
+              title="Change note mode"
             >
-              <Folder className="w-3.5 h-3.5 text-[#5B86E5] shrink-0" />
-              <span className="truncate max-w-[85px] sm:max-w-[130px]">
+              {noteMode === 'student' ? (
+                <GraduationCap className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              ) : noteMode === 'developer' ? (
+                <Code className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+              ) : (
+                <FileText className="w-3.5 h-3.5 text-neutral-600 shrink-0" />
+              )}
+              <span className="capitalize">{noteMode === 'developer' ? 'Dev' : noteMode}</span>
+              <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+            </button>
+
+            {/* Mode Selection Dropdown */}
+            {showModePicker && (
+              <div
+                className="absolute left-0 top-9 w-52 bg-white border border-neutral-200 rounded-xl shadow-xl p-1.5 z-40 animate-in fade-in zoom-in-95"
+                onClick={() => setShowModePicker(false)}
+              >
+                <div className="px-2.5 py-1 text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                  Note Mode
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNoteMode('normal')}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition ${
+                    noteMode === 'normal'
+                      ? 'bg-neutral-900 text-white'
+                      : 'hover:bg-neutral-100 text-neutral-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5" />
+                    <div>
+                      <div className="font-semibold">Normal Note</div>
+                      <div className="text-[10px] opacity-75">Clean general notes & tasks</div>
+                    </div>
+                  </div>
+                  {noteMode === 'normal' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNoteMode('student')}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition mt-0.5 ${
+                    noteMode === 'student'
+                      ? 'bg-blue-600 text-white'
+                      : 'hover:bg-blue-50 text-neutral-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <div>
+                      <div className="font-semibold">Student Note</div>
+                      <div className="text-[10px] opacity-75">Lectures, Q&A, formulas & study</div>
+                    </div>
+                  </div>
+                  {noteMode === 'student' && <Check className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNoteMode('developer')}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium flex items-center justify-between transition mt-0.5 ${
+                    noteMode === 'developer'
+                      ? 'bg-purple-600 text-white'
+                      : 'hover:bg-purple-50 text-neutral-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Code className="w-3.5 h-3.5" />
+                    <div>
+                      <div className="font-semibold">Developer Note</div>
+                      <div className="text-[10px] opacity-75">API keys, prompts, specs & portals</div>
+                    </div>
+                  </div>
+                  {noteMode === 'developer' && <Check className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Student Subject Picker (If in Student Mode) */}
+          {noteMode === 'student' && (
+            <div className="relative shrink-0">
+              <button
+                onClick={() => {
+                  setShowSubjectPicker(!showSubjectPicker);
+                  setShowFolderPicker(false);
+                  setShowProjectPicker(false);
+                  setShowModePicker(false);
+                }}
+                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  studentSubject
+                    ? 'bg-blue-100/70 text-blue-900 border-blue-300'
+                    : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
+                }`}
+                title="Academic Subject"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="truncate max-w-[70px] sm:max-w-[120px]">
+                  {studentSubject || 'Subject'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-neutral-400 shrink-0" />
+              </button>
+
+              {showSubjectPicker && (
+                <div className="absolute left-0 top-9 w-56 bg-white border border-neutral-200 rounded-xl shadow-xl p-2 z-40 animate-in fade-in zoom-in-95">
+                  <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-2 py-1">
+                    Academic Subject
+                  </div>
+                  <div className="max-h-44 overflow-y-auto space-y-0.5 my-1">
+                    <button
+                      onClick={() => {
+                        setStudentSubject('');
+                        setShowSubjectPicker(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition ${
+                        !studentSubject ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700'
+                      }`}
+                    >
+                      <span>None / General</span>
+                      {!studentSubject && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                    {STUDENT_SUBJECTS.map((subj) => (
+                      <button
+                        key={subj}
+                        onClick={() => {
+                          setStudentSubject(subj);
+                          setShowSubjectPicker(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition ${
+                          studentSubject === subj ? 'bg-blue-600 text-white' : 'hover:bg-neutral-100 text-neutral-700'
+                        }`}
+                      >
+                        <span>{subj}</span>
+                        {studentSubject === subj && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom Subject Form */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (customSubjectInput.trim()) {
+                        setStudentSubject(customSubjectInput.trim());
+                        setCustomSubjectInput('');
+                        setShowSubjectPicker(false);
+                      }
+                    }}
+                    className="mt-2 pt-2 border-t border-neutral-100 flex items-center gap-1.5"
+                  >
+                    <input
+                      type="text"
+                      value={customSubjectInput}
+                      onChange={(e) => setCustomSubjectInput(e.target.value)}
+                      placeholder="Custom subject..."
+                      className="flex-1 px-2 py-1 bg-neutral-50 border border-neutral-200 rounded-md text-xs outline-none focus:border-neutral-900"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!customSubjectInput.trim()}
+                      className="px-2.5 py-1 bg-neutral-900 text-white text-xs font-medium rounded-md disabled:opacity-40 hover:bg-neutral-800 transition"
+                    >
+                      Set
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Folder Assignment */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => {
+                setShowFolderPicker(!showFolderPicker);
+                setShowProjectPicker(false);
+                setShowModePicker(false);
+                setShowSubjectPicker(false);
+              }}
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border border-neutral-200 transition cursor-pointer"
+            >
+              <Folder className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              <span className="truncate max-w-[70px] sm:max-w-[120px]">
                 {currentFolder ? currentFolder.name : 'Category'}
               </span>
-              <ChevronDown className="w-3 h-3 text-[#5B86E5]/70 shrink-0" />
+              <ChevronDown className="w-3 h-3 text-neutral-400 shrink-0" />
             </button>
 
             {/* Folder Dropdown */}
             {showFolderPicker && (
-              <div className="absolute left-0 top-9 w-60 sm:w-64 bg-white/98 backdrop-blur-md border border-slate-200 rounded-[20px] shadow-[0_12px_36px_rgba(0,0,0,0.12)] p-2 z-30 animate-in fade-in zoom-in-95">
-                <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2.5 py-1">
-                  <span>Select Category</span>
+              <div className="absolute left-0 top-9 w-60 bg-white border border-neutral-200 rounded-xl shadow-xl p-2 z-40 animate-in fade-in zoom-in-95">
+                <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-2 py-1">
+                  Category
                 </div>
-
-                <div className="max-h-48 overflow-y-auto space-y-1 my-1">
+                <div className="max-h-48 overflow-y-auto space-y-0.5 my-1">
                   <button
                     onClick={() => {
                       setFolderId(undefined);
                       setShowFolderPicker(false);
                     }}
-                    className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-between cursor-pointer transition ${
-                      !folderId ? 'bg-[#5B86E5] text-white shadow-xs' : 'hover:bg-slate-100 text-slate-700'
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition ${
+                      !folderId ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700'
                     }`}
                   >
                     <span>Uncategorised</span>
@@ -785,8 +929,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                         setFolderId(f.id);
                         setShowFolderPicker(false);
                       }}
-                      className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center justify-between cursor-pointer transition ${
-                        folderId === f.id ? 'bg-[#5B86E5] text-white shadow-xs' : 'hover:bg-slate-100 text-slate-700'
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition ${
+                        folderId === f.id ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700'
                       }`}
                     >
                       <span className="truncate">{f.name}</span>
@@ -795,22 +939,21 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                   ))}
                 </div>
 
-                {/* Create Custom Folder inside Editor */}
                 <form
                   onSubmit={handleCreateCustomFolder}
-                  className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-1.5"
+                  className="mt-2 pt-2 border-t border-neutral-100 flex items-center gap-1.5"
                 >
                   <input
                     type="text"
                     value={newFolderNameInput}
                     onChange={(e) => setNewFolderNameInput(e.target.value)}
-                    placeholder="+ New category..."
-                    className="flex-1 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#5B86E5]"
+                    placeholder="New category..."
+                    className="flex-1 px-2 py-1 bg-neutral-50 border border-neutral-200 rounded-md text-xs outline-none focus:border-neutral-900"
                   />
                   <button
                     type="submit"
                     disabled={!newFolderNameInput.trim()}
-                    className="px-2.5 py-1 bg-[#5B86E5] text-white text-xs font-bold rounded-lg disabled:opacity-40 hover:bg-[#4D78DE] transition cursor-pointer shrink-0"
+                    className="px-2.5 py-1 bg-neutral-900 text-white text-xs font-medium rounded-md disabled:opacity-40 hover:bg-neutral-800 transition"
                   >
                     Add
                   </button>
@@ -818,113 +961,330 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               </div>
             )}
           </div>
+
+          {/* Project Assignment (if projects exist) */}
+          {projects && projects.length > 0 && (
+            <div className="relative shrink-0">
+              <button
+                onClick={() => {
+                  setShowProjectPicker(!showProjectPicker);
+                  setShowFolderPicker(false);
+                  setShowModePicker(false);
+                  setShowSubjectPicker(false);
+                }}
+                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  currentProject
+                    ? 'bg-neutral-100 text-neutral-900 border-neutral-300'
+                    : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-neutral-100'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate max-w-[70px] sm:max-w-[120px]">
+                  {currentProject ? currentProject.name || currentProject.title : 'Project'}
+                </span>
+                <ChevronDown className="w-3 h-3 text-neutral-400 shrink-0" />
+              </button>
+
+              {showProjectPicker && (
+                <div className="absolute left-0 top-9 w-60 bg-white border border-neutral-200 rounded-xl shadow-xl p-2 z-40 animate-in fade-in zoom-in-95">
+                  <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider px-2 py-1">
+                    Project
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-0.5 my-1">
+                    <button
+                      onClick={() => {
+                        setProjectId(undefined);
+                        setShowProjectPicker(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition ${
+                        !projectId ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700'
+                      }`}
+                    >
+                      <span>Standalone (No Project)</span>
+                      {!projectId && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                    {projects.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setProjectId(p.id);
+                          setShowProjectPicker(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition ${
+                          projectId === p.id ? 'bg-neutral-900 text-white' : 'hover:bg-neutral-100 text-neutral-700'
+                        }`}
+                      >
+                        <span className="truncate flex items-center gap-1.5">
+                          <span>{p.icon || '📁'}</span>
+                          <span>{p.name || p.title}</span>
+                        </span>
+                        {projectId === p.id && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right Toolbar Actions */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          {/* Explicit Manual Save Button for instant persistence verification */}
+          {/* Add Resource Contextual Action */}
+          <div className="relative">
+            <button
+              onClick={() => setShowAddMenu(!showAddMenu)}
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold bg-neutral-900 hover:bg-neutral-800 text-white transition cursor-pointer shadow-2xs"
+              title="Add items to note"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden xs:inline">Add</span>
+              <ChevronDown className="w-3 h-3 text-neutral-400" />
+            </button>
+
+            {showAddMenu && (
+              <div
+                className="absolute right-0 top-9 w-56 bg-white border border-neutral-200 rounded-xl shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95 max-h-[85vh] overflow-y-auto"
+                onClick={() => setShowAddMenu(false)}
+              >
+                {/* 1. STUDENT MODE TAILORED OPTIONS */}
+                {noteMode === 'student' && (
+                  <>
+                    <div className="px-3 py-1 text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
+                      <GraduationCap className="w-3 h-3" /> Student Tools
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('video')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <Video className="w-3.5 h-3.5 text-blue-600" />
+                      <span>YouTube / Lecture Video</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('question')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Important Q&A / Flashcard</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('formula')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <Calculator className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Key Formula / Equation</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('weblink')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <Link2 className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Study Link / Research Paper</span>
+                    </button>
+                    <div className="border-t border-neutral-100 my-1" />
+                  </>
+                )}
+
+                {/* 2. DEVELOPER MODE TAILORED OPTIONS */}
+                {noteMode === 'developer' && (
+                  <>
+                    <div className="px-3 py-1 text-[10px] font-bold text-purple-600 uppercase tracking-wider flex items-center gap-1">
+                      <Code className="w-3 h-3" /> Developer Tools
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('apikey')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <Key className="w-3.5 h-3.5 text-purple-600" />
+                      <span>API Key & Secret</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('prompt')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <MessageSquareCode className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Prompt & AI Template</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('spec')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-purple-600" />
+                      <span>PRD & Spec Document</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('website')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Website & Login Portal</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('video')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <Video className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Dev Video / Tutorial</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveAddResourceModal('weblink')}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                    >
+                      <Link2 className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Tech Doc / Repo Link</span>
+                    </button>
+                    <div className="border-t border-neutral-100 my-1" />
+                  </>
+                )}
+
+                {/* 3. GENERAL MEDIA & DRAWING OPTIONS */}
+                <div className="px-3 py-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
+                  Media & Visuals
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-neutral-500" />
+                  <span>Attach Photo / Image</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSketchStudio(true)}
+                  className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                >
+                  <PenTool className="w-3.5 h-3.5 text-neutral-500" />
+                  <span>Draw Hand Sketch</span>
+                </button>
+                {noteMode === 'normal' && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveAddResourceModal('weblink')}
+                    className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2.5"
+                  >
+                    <Link2 className="w-3.5 h-3.5 text-neutral-500" />
+                    <span>Reference Link</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Save Status / Button */}
           <button
             id="editor-save-btn"
             onClick={handleManualSave}
-            className={`px-3 py-1 sm:py-1.5 rounded-full text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 shrink-0 ${
+            className={`px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium transition inline-flex items-center gap-1 cursor-pointer border shrink-0 ${
               saveStatus === 'saving'
-                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                ? 'bg-neutral-100 text-neutral-600 border-neutral-200'
                 : justSaved
-                ? 'bg-emerald-600 text-white border border-emerald-600 shadow-sm'
-                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : 'bg-white hover:bg-neutral-50 text-neutral-700 border-neutral-200'
             }`}
-            title="Save note now (Offline-first persistent save)"
+            title="Save note"
           >
             {saveStatus === 'saving' ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-800" />
-                <span className="text-[11px] sm:text-xs">Saving...</span>
+                <Loader2 className="w-3 h-3 animate-spin text-neutral-500" />
+                <span className="hidden sm:inline">Saving</span>
               </>
             ) : justSaved ? (
               <>
-                <Check className="w-3.5 h-3.5 stroke-[3] text-white" />
-                <span className="text-[11px] sm:text-xs">Saved ✓</span>
+                <Check className="w-3 h-3 text-emerald-600" />
+                <span className="hidden sm:inline">Saved</span>
               </>
             ) : (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-700" />
-                <span className="text-[11px] sm:text-xs">Save</span>
-              </>
+              <span>Save</span>
             )}
-          </button>
-
-          {/* Attach Photo Button */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="p-1.5 sm:p-2 rounded-full text-slate-600 hover:bg-[#EAF1FB] hover:text-[#5B86E5] active:scale-95 transition cursor-pointer"
-            title="Attach Photo / Image"
-          >
-            <ImageIcon className="w-4 h-4" />
-          </button>
-
-          {/* Full-Page Sketch Studio Button */}
-          <button
-            onClick={() => setShowSketchStudio(true)}
-            className="p-1.5 sm:p-2 rounded-full text-slate-600 hover:bg-[#FAF0E6] hover:text-amber-600 active:scale-95 transition cursor-pointer"
-            title="Open Hand-Drawn Sketch Studio"
-          >
-            <PenTool className="w-4 h-4 text-amber-500" />
-          </button>
-
-          {/* Tags Drawer */}
-          <button
-            onClick={() => setShowTagPicker(!showTagPicker)}
-            className={`p-1.5 sm:p-2 rounded-full transition active:scale-95 cursor-pointer ${
-              tags.length > 0 || showTagPicker
-                ? 'bg-[#F3EEF9] text-purple-700'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-            title="Manage tags"
-          >
-            <Tag className="w-4 h-4" />
           </button>
 
           {/* Pin Button */}
           <button
             onClick={() => setIsPinned(!isPinned)}
-            className={`p-1.5 sm:p-2 rounded-full transition active:scale-95 cursor-pointer ${
+            className={`p-1.5 rounded-lg transition cursor-pointer border shrink-0 ${
               isPinned
-                ? 'bg-[#5B86E5] text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100'
+                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                : 'bg-white border-neutral-200 text-neutral-500 hover:text-neutral-800'
             }`}
-            title={isPinned ? 'Unpin note' : 'Pin to top'}
+            title={isPinned ? 'Unpin' : 'Pin'}
           >
-            <Pin className={`w-4 h-4 ${isPinned ? 'fill-white' : ''}`} />
+            <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-amber-600' : ''}`} />
           </button>
 
-          {/* Delete Button */}
-          {!isNewNote && (
+          {/* 3-Dot Options Menu */}
+          <div className="relative shrink-0">
             <button
-              onClick={() => {
-                onDelete(noteId);
-                onClose();
-              }}
-              className="p-1.5 sm:p-2 rounded-full text-slate-400 hover:text-red-600 hover:bg-red-50 active:scale-95 transition cursor-pointer"
-              title="Delete note"
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              className="p-1.5 rounded-lg bg-white border border-neutral-200 text-neutral-500 hover:text-neutral-800 hover:bg-neutral-50 transition cursor-pointer"
+              title="More options"
             >
-              <Trash2 className="w-4 h-4" />
+              <MoreVertical className="w-3.5 h-3.5" />
             </button>
-          )}
+
+            {showMoreMenu && (
+              <div
+                className="absolute right-0 top-9 w-44 bg-white border border-neutral-200 rounded-xl shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95"
+                onClick={() => setShowMoreMenu(false)}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowTagPicker(!showTagPicker)}
+                  className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2"
+                >
+                  <Tag className="w-3.5 h-3.5 text-neutral-500" />
+                  <span>Manage Tags</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSketchStudio(true)}
+                  className="w-full px-3 py-1.5 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 flex items-center gap-2"
+                >
+                  <PenTool className="w-3.5 h-3.5 text-neutral-500" />
+                  <span>Sketch Studio</span>
+                </button>
+                {!isNewNote && (
+                  <>
+                    <div className="border-t border-neutral-100 my-1" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDelete(noteId);
+                        onClose();
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                      <span>Delete Note</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Tag Picker Drawer */}
+      {/* Tag Drawer */}
       {showTagPicker && (
-        <div className="bg-[#FAF0E6]/50 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-neutral-50 border-b border-neutral-200 px-4 py-3 animate-in fade-in duration-100">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-              Note Tags
-            </span>
+            <span className="text-xs font-semibold text-neutral-600">Tags</span>
             <button
               onClick={() => setShowTagPicker(false)}
-              className="text-slate-400 hover:text-slate-700 p-0.5"
+              className="text-neutral-400 hover:text-neutral-700 p-0.5"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -933,36 +1293,17 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               type="text"
               value={newTagInput}
               onChange={(e) => setNewTagInput(e.target.value)}
-              placeholder="Add tag (e.g. Physics, Term 1, Important)..."
-              className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#5B86E5]"
+              placeholder="New tag..."
+              className="flex-1 px-2.5 py-1 bg-white border border-neutral-200 rounded-md text-xs outline-none focus:border-neutral-900"
             />
             <button
               type="submit"
               disabled={!newTagInput.trim()}
-              className="px-3 py-1.5 bg-[#5B86E5] text-white text-xs font-bold rounded-xl disabled:opacity-40 hover:bg-[#4D78DE] transition cursor-pointer"
+              className="px-3 py-1 bg-neutral-900 text-white text-xs font-medium rounded-md disabled:opacity-40 hover:bg-neutral-800 transition cursor-pointer"
             >
               Add
             </button>
           </form>
-
-          {/* Color swatches */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 mb-2">
-            <span className="text-[10px] text-slate-400 mr-1 shrink-0 font-medium">Color:</span>
-            {TAG_COLORS.map((color) => (
-              <button
-                key={color.name}
-                type="button"
-                onClick={() => setSelectedTagColor(color)}
-                style={{ backgroundColor: color.hex }}
-                className={`w-5 h-5 rounded-full shrink-0 transition-transform ${
-                  selectedTagColor.name === color.name
-                    ? 'ring-2 ring-[#5B86E5] scale-110'
-                    : 'opacity-80 hover:opacity-100'
-                }`}
-                title={color.name}
-              />
-            ))}
-          </div>
 
           {/* Tags list */}
           {tags.length > 0 && (
@@ -970,18 +1311,13 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               {tags.map((tag) => (
                 <span
                   key={tag.name}
-                  style={{
-                    backgroundColor: `${tag.color}18`,
-                    color: tag.color,
-                    borderColor: `${tag.color}40`,
-                  }}
-                  className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border"
+                  className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md bg-neutral-200/70 text-neutral-800"
                 >
                   #{tag.name}
                   <button
                     type="button"
                     onClick={() => handleRemoveTag(tag.name)}
-                    className="hover:opacity-70 ml-0.5"
+                    className="hover:opacity-70 ml-0.5 text-neutral-500 cursor-pointer"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -992,68 +1328,66 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </div>
       )}
 
-      {/* 2. MAIN NOTE CONTENT AREA */}
-      <div className="flex-1 px-4 sm:px-6 py-4 overflow-y-auto space-y-3">
+      {/* 2. MAIN NOTE CONTENT CANVAS */}
+      <div className="flex-1 px-3.5 sm:px-8 py-4 sm:py-6 max-w-4xl w-full mx-auto overflow-y-auto overflow-x-hidden space-y-3 sm:space-y-4">
         {/* Title Input */}
         <input
           ref={titleInputRef}
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => {
-            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-            const noteToPersist = buildCurrentNoteObject();
-            if (noteToPersist) {
-              setSaveStatus('saving');
-              onSave(noteToPersist);
-              setSaveStatus('saved');
-              setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-            }
-          }}
-          placeholder="Title"
-          className="w-full text-xl sm:text-2xl font-black text-slate-900 placeholder-slate-300 border-none outline-none bg-transparent tracking-tight"
+          placeholder={
+            noteMode === 'student'
+              ? 'Lecture / Study Note Title'
+              : noteMode === 'developer'
+              ? 'Architecture / Feature Note Title'
+              : 'Title'
+          }
+          className="w-full text-xl sm:text-2xl font-bold text-neutral-900 placeholder-neutral-300 border-none outline-none bg-transparent"
         />
 
-        {/* Display tags */}
-        {tags.length > 0 && !showTagPicker && (
-          <div className="flex flex-wrap gap-1.5 pb-1">
-            {tags.map((tag) => (
+        {/* Student Subject Badge & Display Tags */}
+        <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
+          {noteMode === 'student' && studentSubject && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+              <GraduationCap className="w-3 h-3" />
+              {studentSubject}
+            </span>
+          )}
+
+          {tags.length > 0 &&
+            !showTagPicker &&
+            tags.map((tag) => (
               <span
                 key={tag.name}
-                style={{
-                  backgroundColor: `${tag.color}15`,
-                  color: tag.color,
-                  borderColor: `${tag.color}30`,
-                }}
-                className="text-[11px] font-bold px-2 py-0.5 rounded-full border"
+                className="text-[11px] font-medium px-2 py-0.5 rounded bg-neutral-100 text-neutral-600"
               >
                 #{tag.name}
               </span>
             ))}
-          </div>
-        )}
+        </div>
 
         {/* Attached Photos Gallery */}
         {images.length > 0 && (
           <div className="space-y-1.5 pt-1 pb-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <ImageIcon className="w-3 h-3" /> Attached Photos ({images.length})
+            <span className="text-xs font-semibold text-neutral-500 flex items-center gap-1">
+              <ImageIcon className="w-3.5 h-3.5" /> Attached Photos ({images.length})
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {images.map((img, idx) => (
                 <div
                   key={`img-${idx}`}
-                  className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 aspect-video shadow-xs"
+                  className="relative group rounded-xl overflow-hidden border border-neutral-200 bg-neutral-100 aspect-video"
                 >
                   <img
                     src={img}
                     alt={`Attachment ${idx + 1}`}
-                    className="w-full h-full object-cover cursor-pointer hover:scale-105 transition duration-200"
+                    className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition"
                     onClick={() => setPreviewImage(img)}
                   />
                   <button
                     onClick={() => handleRemoveImage(idx)}
-                    className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 hover:bg-black text-white transition cursor-pointer"
+                    className="absolute top-1.5 right-1.5 p-1 rounded-md bg-neutral-900/70 hover:bg-neutral-900 text-white transition cursor-pointer"
                     title="Remove photo"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1067,24 +1401,24 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         {/* Hand-Drawn Sketches Gallery */}
         {sketches.length > 0 && (
           <div className="space-y-1.5 pt-1 pb-2">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <PenTool className="w-3 h-3 text-amber-500" /> Sketches & Diagrams ({sketches.length})
+            <span className="text-xs font-semibold text-neutral-500 flex items-center gap-1">
+              <PenTool className="w-3.5 h-3.5" /> Sketches ({sketches.length})
             </span>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {sketches.map((sketch, idx) => (
                 <div
                   key={`sketch-${idx}`}
-                  className="relative group rounded-2xl overflow-hidden border border-slate-200 bg-white aspect-4/3 shadow-xs"
+                  className="relative group rounded-xl overflow-hidden border border-neutral-200 bg-white aspect-4/3"
                 >
                   <img
                     src={sketch}
                     alt={`Sketch ${idx + 1}`}
-                    className="w-full h-full object-contain p-2 cursor-pointer hover:scale-105 transition duration-200"
+                    className="w-full h-full object-contain p-2 cursor-pointer hover:opacity-95 transition"
                     onClick={() => setPreviewImage(sketch)}
                   />
                   <button
                     onClick={() => handleRemoveSketch(idx)}
-                    className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/60 hover:bg-black text-white transition cursor-pointer"
+                    className="absolute top-1.5 right-1.5 p-1 rounded-md bg-neutral-900/70 hover:bg-neutral-900 text-white transition cursor-pointer"
                     title="Remove sketch"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1095,202 +1429,67 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           </div>
         )}
 
-        {/* STUDENT MOD QUICK ACTION CHIPS ROW */}
-        {isStudentMod && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pt-0.5">
-            <button
-              type="button"
-              onClick={() => setIsAddingYoutube(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <Youtube className="w-3.5 h-3.5 text-red-600" />
-              <span>+ YouTube Lecture</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsAddingWebLink(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <Globe className="w-3.5 h-3.5 text-blue-600" />
-              <span>+ Reference Link</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsAddingQuestion(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>+ Important Q&A</span>
-            </button>
-          </div>
-        )}
-
-        {/* DEVELOPER MOD QUICK ACTION CHIPS ROW */}
-        {isDeveloperMod && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pt-0.5">
-            <button
-              type="button"
-              onClick={() => setIsAddingApiKey(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <Key className="w-3.5 h-3.5 text-amber-600" />
-              <span>+ API Key</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsAddingPromptBox(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <MessageSquareCode className="w-3.5 h-3.5 text-indigo-600" />
-              <span>+ Prompt Box</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsAddingSpecFile(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <FileCode className="w-3.5 h-3.5 text-emerald-600" />
-              <span>+ PRD / Spec File</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsAddingDevWebsite(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <Globe className="w-3.5 h-3.5 text-blue-600" />
-              <span>+ Website & Login</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsAddingDevVideo(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-200 shadow-2xs active:scale-95 transition cursor-pointer shrink-0"
-            >
-              <Video className="w-3.5 h-3.5 text-rose-600" />
-              <span>+ Video Resource</span>
-            </button>
-          </div>
-        )}
-
-        {/* UNIFIED TRUE VISUAL RICH TEXT & IN-NOTE TO-DO WYSIWYG EDITOR */}
-        <div className="relative min-h-[220px] flex flex-col">
+        {/* VISUAL RICH TEXT & IN-NOTE TO-DO EDITOR */}
+        <div className="relative min-h-[200px] flex flex-col">
           <div
             ref={editorRef}
             contentEditable
             onClick={handleEditorClick}
             onInput={handleEditorInput}
             onKeyDown={handleEditorKeyDown}
-            onBlur={() => {
-              if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-              const noteToPersist = buildCurrentNoteObject();
-              if (noteToPersist) {
-                setSaveStatus('saving');
-                onSave(noteToPersist);
-                setSaveStatus('saved');
-                setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-              }
-            }}
-            data-placeholder="Start typing your notes here... You can bold, italicize, underline, highlight text in colors, and tap [✓ To-Do List] to insert interactive checklists!"
-            className="rich-note-editor flex-1 min-h-[220px] text-base text-slate-800 outline-none leading-relaxed font-normal focus:outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-slate-300 empty:before:pointer-events-none"
+            data-placeholder={
+              noteMode === 'student'
+                ? 'Type your lecture summary, key concepts, or homework notes...'
+                : noteMode === 'developer'
+                ? 'Document technical requirements, architecture notes, or instructions...'
+                : 'Start typing your note here...'
+            }
+            className="rich-note-editor flex-1 min-h-[200px] text-sm sm:text-base text-neutral-800 outline-none leading-relaxed font-normal empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-300 empty:before:pointer-events-none"
           />
         </div>
 
-        {/* STUDENT MOD RICH MODULES: YouTube Embedded Videos & Web Reference Links */}
-        <StudentMediaLinksSection
+        {/* UNIFIED RESOURCES & ATTACHMENTS MANAGER (ONLY RENDERS IF RESOURCES EXIST) */}
+        <NoteResourcesManager
+          apiKeys={apiKeys}
+          promptBoxes={promptBoxes}
+          specFiles={specFiles}
+          devWebsites={devWebsites}
+          devVideos={devVideos}
           youtubeLinks={youtubeLinks}
           webLinks={webLinks}
+          importantQuestions={importantQuestions}
+          quickFormulas={quickFormulas}
+          onUpdateApiKeys={setApiKeys}
+          onUpdatePromptBoxes={setPromptBoxes}
+          onUpdateSpecFiles={setSpecFiles}
+          onUpdateDevWebsites={setDevWebsites}
+          onUpdateDevVideos={setDevVideos}
           onUpdateYoutubeLinks={setYoutubeLinks}
           onUpdateWebLinks={setWebLinks}
-          isAddingYoutubeExternal={isAddingYoutube}
-          onCloseAddingYoutubeExternal={() => setIsAddingYoutube(false)}
-          isAddingWebLinkExternal={isAddingWebLink}
-          onCloseAddingWebLinkExternal={() => setIsAddingWebLink(false)}
+          onUpdateImportantQuestions={setImportantQuestions}
+          onUpdateQuickFormulas={setQuickFormulas}
+          activeAddType={activeAddResourceModal}
+          onCloseAddType={() => setActiveAddResourceModal(null)}
         />
-
-        {/* STUDENT MOD RICH MODULES: Most Important Questions Card Section */}
-        <StudentImportantQuestionsSection
-          questions={importantQuestions}
-          onChange={setImportantQuestions}
-          isAddingNewExternal={isAddingQuestion}
-          onCloseAddingNewExternal={() => setIsAddingQuestion(false)}
-        />
-
-        {/* DEVELOPER MOD RICH MODULES: API Keys Block Section */}
-        {(isDeveloperMod || apiKeys.length > 0) && (
-          <DevApiKeysSection
-            apiKeys={apiKeys}
-            onChange={setApiKeys}
-            isAddingExternal={isAddingApiKey}
-            onCloseAddingExternal={() => setIsAddingApiKey(false)}
-          />
-        )}
-
-        {/* DEVELOPER MOD RICH MODULES: Prompt Boxes Block Section */}
-        {(isDeveloperMod || promptBoxes.length > 0) && (
-          <DevPromptBoxesSection
-            promptBoxes={promptBoxes}
-            onChange={setPromptBoxes}
-            isAddingExternal={isAddingPromptBox}
-            onCloseAddingExternal={() => setIsAddingPromptBox(false)}
-          />
-        )}
-
-        {/* DEVELOPER MOD RICH MODULES: MD/PRD & Spec Files Block Section */}
-        {(isDeveloperMod || specFiles.length > 0) && (
-          <DevSpecFilesSection
-            specFiles={specFiles}
-            onChange={setSpecFiles}
-            isAddingExternal={isAddingSpecFile}
-            onCloseAddingExternal={() => setIsAddingSpecFile(false)}
-          />
-        )}
-
-        {/* DEVELOPER MOD RICH MODULES: Websites & Credentials Section */}
-        {(isDeveloperMod || devWebsites.length > 0) && (
-          <DevWebsitesCredentialsSection
-            devWebsites={devWebsites}
-            onChange={setDevWebsites}
-            isAddingExternal={isAddingDevWebsite}
-            onCloseAddingExternal={() => setIsAddingDevWebsite(false)}
-          />
-        )}
-
-        {/* DEVELOPER MOD RICH MODULES: Video Resources & Architecture Tutorials Section */}
-        {(isDeveloperMod || devVideos.length > 0) && (
-          <DevVideoResourcesSection
-            devVideos={devVideos}
-            onChange={setDevVideos}
-            isAddingExternal={isAddingDevVideo}
-            onCloseAddingExternal={() => setIsAddingDevVideo(false)}
-          />
-        )}
       </div>
 
-      {/* HIGHLIGHT COLOR PALETTE POPUP STRIP */}
+      {/* HIGHLIGHT COLOR PALETTE POPUP */}
       {showHighlightColorStrip && (
-        <div className="bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2 flex items-center justify-between gap-2 animate-in fade-in slide-in-from-bottom-1 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
+        <div className="bg-white border-t border-neutral-200 px-4 py-2 flex items-center justify-between gap-2 z-30">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              Highlight Color:
-            </span>
+            <span className="text-xs font-semibold text-neutral-500">Color:</span>
             <div className="flex items-center gap-2">
               {HIGHLIGHT_PALETTE.map((hc) => (
                 <button
                   key={hc.name}
                   onMouseDown={(e) => e.preventDefault()}
-                  onTouchStart={(e) => e.preventDefault()}
                   onClick={() => {
                     handleApplyHighlight(hc);
                     setShowHighlightColorStrip(false);
                   }}
                   style={{ backgroundColor: hc.bg, color: hc.text, borderColor: hc.border }}
-                  className={`px-2.5 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs ${
-                    activeHighlightColor.name === hc.name ? 'ring-2 ring-[#5B86E5] scale-105' : 'hover:scale-105'
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold border flex items-center gap-1.5 transition ${
+                    activeHighlightColor.name === hc.name ? 'ring-2 ring-neutral-900' : ''
                   }`}
                 >
                   <span
@@ -1302,10 +1501,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               ))}
             </div>
           </div>
-
           <button
             onClick={() => setShowHighlightColorStrip(false)}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+            className="p-1 rounded-md text-neutral-400 hover:text-neutral-700"
           >
             <X className="w-4 h-4" />
           </button>
@@ -1313,156 +1511,124 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       )}
 
       {/* 3. VISUAL RICH FORMATTING RIBBON TOOLBAR */}
-      <div className="bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 sm:px-4 py-2 flex items-center justify-start gap-1 select-none overflow-x-auto shrink-0 scrollbar-none z-20 shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
-        {/* Bold */}
+      <div className="bg-white border-t border-neutral-200 px-2.5 sm:px-6 py-2 flex items-center justify-start gap-1 select-none overflow-x-auto shrink-0 scrollbar-none z-20">
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('bold')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 active:bg-slate-200 transition font-black cursor-pointer shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Bold"
         >
-          <Bold className="w-4 h-4 stroke-[2.8]" />
+          <Bold className="w-4 h-4" />
         </button>
 
-        {/* Italic */}
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('italic')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 active:bg-slate-200 transition italic cursor-pointer shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Italic"
         >
-          <Italic className="w-4 h-4 stroke-[2.2]" />
+          <Italic className="w-4 h-4" />
         </button>
 
-        {/* Underline */}
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('underline')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 active:bg-slate-200 transition cursor-pointer shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Underline"
         >
-          <Underline className="w-4 h-4 stroke-[2.2]" />
+          <Underline className="w-4 h-4" />
         </button>
 
-        {/* Strikethrough */}
-        <button
-          onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
-          onClick={() => executeFormat('strikeThrough')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 active:bg-slate-200 transition cursor-pointer shrink-0"
-          title="Strikethrough"
-        >
-          <Strikethrough className="w-4 h-4" />
-        </button>
+        <div className="w-[1px] h-4 bg-neutral-200 mx-1 shrink-0" />
 
-        <div className="w-[1px] h-5 bg-slate-200 mx-1 shrink-0" />
-
-        {/* TRUE INSTANT TEXT HIGHLIGHTER BUTTON */}
-        <div className="flex items-center gap-0.5 bg-[#FAF0E6] rounded-xl p-0.5 border border-[#F9DFC5] shrink-0">
+        {/* Text Highlighter */}
+        <div className="flex items-center gap-0.5 bg-neutral-50 rounded-md p-0.5 border border-neutral-200 shrink-0">
           <button
             onMouseDown={(e) => e.preventDefault()}
-            onTouchStart={(e) => e.preventDefault()}
             onClick={() => handleApplyHighlight()}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-amber-900 hover:bg-white active:scale-95 transition cursor-pointer text-xs font-bold"
-            title="Highlight selected text"
+            className="flex items-center gap-1 px-2 py-1 rounded text-neutral-700 hover:bg-white transition cursor-pointer text-xs font-medium"
+            title="Highlight text"
           >
-            <Highlighter className="w-4 h-4 text-amber-600 stroke-[2.2]" />
+            <Highlighter className="w-3.5 h-3.5 text-neutral-600" />
             <span className="hidden sm:inline">Highlight</span>
             <span
               style={{ backgroundColor: activeHighlightColor.dot }}
-              className="w-2.5 h-2.5 rounded-full inline-block border border-black/10"
+              className="w-2 h-2 rounded-full inline-block"
             />
           </button>
-
-          {/* Color Palette dropdown trigger */}
           <button
             onMouseDown={(e) => e.preventDefault()}
-            onTouchStart={(e) => e.preventDefault()}
             onClick={() => setShowHighlightColorStrip(!showHighlightColorStrip)}
-            className="p-1.5 rounded-lg text-amber-700 hover:text-amber-950 hover:bg-white transition cursor-pointer"
-            title="Choose Highlighter Color"
+            className="p-1 rounded text-neutral-500 hover:text-neutral-800 hover:bg-white transition"
+            title="Choose color"
           >
-            <Palette className="w-3.5 h-3.5" />
+            <Palette className="w-3 h-3" />
           </button>
         </div>
 
-        <div className="w-[1px] h-5 bg-slate-200 mx-1 shrink-0" />
+        <div className="w-[1px] h-4 bg-neutral-200 mx-1 shrink-0" />
 
-        {/* PRIMARY IN-NOTE TO-DO LIST ITEM BUTTON */}
+        {/* To-Do List Item Button */}
         <button
           id="editor-insert-todo-btn"
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={insertTodoItem}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EAF8F0] hover:bg-[#D4F4E2] text-emerald-800 border border-[#C2ECD3] rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer shrink-0 shadow-xs"
-          title="Insert In-Note To-Do Task with Checkbox"
+          className="flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border border-neutral-200 rounded-md text-xs font-medium transition cursor-pointer shrink-0"
+          title="Insert In-Note Checklist"
         >
-          <CheckSquare className="w-4 h-4 text-emerald-600 stroke-[2.4]" />
-          <span>To-Do List</span>
+          <CheckSquare className="w-3.5 h-3.5 text-neutral-600" />
+          <span>Task</span>
         </button>
 
-        <div className="w-[1px] h-5 bg-slate-200 mx-1 shrink-0" />
+        <div className="w-[1px] h-4 bg-neutral-200 mx-1 shrink-0" />
 
-        {/* Heading 1 */}
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('formatBlock', '<h2>')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 transition cursor-pointer font-bold shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Heading"
         >
           <Heading1 className="w-4 h-4" />
         </button>
 
-        {/* Bullet List */}
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('insertUnorderedList')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 transition cursor-pointer shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Bullet List"
         >
           <List className="w-4 h-4" />
         </button>
 
-        {/* Auto-increment Numbered List (1, 2, 3...) */}
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('insertOrderedList')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 transition cursor-pointer font-bold shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Numbered List"
         >
           <ListOrdered className="w-4 h-4" />
         </button>
 
-        {/* Blockquote */}
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('formatBlock', '<blockquote>')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 transition cursor-pointer shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Quote Block"
         >
           <Quote className="w-4 h-4" />
         </button>
 
-        {/* Divider Line */}
         <button
           onMouseDown={(e) => e.preventDefault()}
-          onTouchStart={(e) => e.preventDefault()}
           onClick={() => executeFormat('insertHorizontalRule')}
-          className="p-2 rounded-xl text-slate-800 hover:bg-slate-100 transition cursor-pointer shrink-0"
+          className="p-1.5 rounded-md text-neutral-700 hover:bg-neutral-100 transition cursor-pointer shrink-0"
           title="Divider Line"
         >
           <Minus className="w-4 h-4" />
         </button>
       </div>
 
-      {/* FULL-PAGE SKETCH STUDIO MODAL */}
+      {/* SKETCH STUDIO MODAL */}
       <SketchCanvasModal
         isOpen={showSketchStudio}
         onClose={() => setShowSketchStudio(false)}
@@ -1472,20 +1638,20 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
       {/* Fullscreen Photo / Sketch Preview Modal */}
       {previewImage && (
         <div
-          className="fixed inset-0 z-70 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          className="fixed inset-0 z-70 bg-neutral-900/80 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setPreviewImage(null)}
         >
           <div className="relative max-w-2xl max-h-[85vh] flex flex-col items-center">
             <button
               onClick={() => setPreviewImage(null)}
-              className="absolute -top-10 right-0 p-2 text-white/80 hover:text-white rounded-full bg-white/10 transition cursor-pointer"
+              className="absolute -top-10 right-0 p-1.5 text-white/80 hover:text-white rounded-full bg-white/10 transition cursor-pointer"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5" />
             </button>
             <img
               src={previewImage}
               alt="Preview"
-              className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl"
+              className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl"
             />
           </div>
         </div>
@@ -1493,4 +1659,3 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     </div>
   );
 };
-

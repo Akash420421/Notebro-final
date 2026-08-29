@@ -1,9 +1,25 @@
 import React, { useState } from 'react';
-import { ProjectItem } from '../types';
-import { Pin, Trash2, BookOpen, Code, FileText, ChevronRight, Layers, AlertCircle, X } from 'lucide-react';
+import { ProjectItem, NoteItem } from '../types';
+import { calculateProjectProgress, formatDeadlineStatus } from '../services/projectService';
+import {
+  Pin,
+  Trash2,
+  BookOpen,
+  Code,
+  FileText,
+  ChevronRight,
+  Layers,
+  AlertCircle,
+  X,
+  CheckSquare,
+  Paperclip,
+  Link2,
+  Calendar,
+} from 'lucide-react';
 
 interface OldProjectsListProps {
   projects: ProjectItem[];
+  notes?: NoteItem[];
   onSelectProject: (project: ProjectItem) => void;
   onDeleteProject: (id: string, e?: React.MouseEvent) => void;
   onTogglePin: (id: string, e: React.MouseEvent) => void;
@@ -11,6 +27,7 @@ interface OldProjectsListProps {
 
 export const OldProjectsList: React.FC<OldProjectsListProps> = ({
   projects,
+  notes = [],
   onSelectProject,
   onDeleteProject,
   onTogglePin,
@@ -84,12 +101,18 @@ export const OldProjectsList: React.FC<OldProjectsListProps> = ({
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none snap-x snap-mandatory -mx-1 px-1">
           {projects.map((project) => {
             const badge = getModeBadge(project.mode);
+            const projectNotesCount = notes.filter((n) => n.projectId === project.id).length;
+            const tasks = project.tasks || [];
+            const completedCount = tasks.filter((t) => t.completed).length;
+            const progress = calculateProjectProgress(tasks);
+            const deadline = project.deadline ? formatDeadlineStatus(project.deadline) : null;
+
             return (
               <div
                 key={project.id}
                 id={`project-card-${project.id}`}
                 onClick={() => onSelectProject(project)}
-                className="snap-start shrink-0 w-64 sm:w-72 bg-white/95 backdrop-blur-md border border-slate-200/80 hover:border-slate-300 rounded-[26px] p-4.5 flex flex-col justify-between cursor-pointer transition-all duration-200 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] group relative"
+                className="snap-start shrink-0 w-64 sm:w-72 bg-white/95 backdrop-blur-md border border-slate-200/80 hover:border-indigo-300 rounded-[26px] p-4.5 flex flex-col justify-between cursor-pointer transition-all duration-200 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] group relative"
               >
                 <div>
                   {/* Top Bar: Mode tag & pin & delete */}
@@ -97,7 +120,7 @@ export const OldProjectsList: React.FC<OldProjectsListProps> = ({
                     <span
                       className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${badge.badgeBg}`}
                     >
-                      {badge.icon}
+                      {project.icon ? <span className="text-xs">{project.icon}</span> : badge.icon}
                       {badge.label}
                     </span>
 
@@ -140,8 +163,8 @@ export const OldProjectsList: React.FC<OldProjectsListProps> = ({
                   </div>
 
                   {/* Title & Subtitle */}
-                  <h4 className="font-extrabold text-sm text-slate-900 line-clamp-1 mb-0.5 tracking-tight group-hover:text-black">
-                    {project.title}
+                  <h4 className="font-extrabold text-sm text-slate-900 line-clamp-1 mb-0.5 tracking-tight group-hover:text-indigo-600 transition-colors">
+                    {project.name || project.title}
                   </h4>
                   {project.subtitle && (
                     <p className="text-[11px] font-medium text-slate-500 line-clamp-1 mb-1.5">
@@ -150,35 +173,43 @@ export const OldProjectsList: React.FC<OldProjectsListProps> = ({
                   )}
 
                   {/* Description preview */}
-                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3">
+                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-2.5">
                     {project.description || 'No description added.'}
                   </p>
+
+                  {/* Progress bar */}
+                  {tasks.length > 0 && (
+                    <div className="mb-2.5">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 mb-1">
+                        <span>{completedCount}/{tasks.length} Tasks</span>
+                        <span>{progress}%</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-indigo-500 rounded-full"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Footer: Tags and timestamp */}
+                {/* Footer: Tags, notes count and timestamp */}
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                  <div className="flex items-center gap-1 truncate">
-                    {project.tags && project.tags.length > 0 ? (
-                      project.tags.slice(0, 2).map((t, idx) => (
-                        <span
-                          key={idx}
-                          className="bg-[#EAF1FB] text-[#3B66CC] font-bold px-2 py-0.5 rounded-full text-[10px] truncate max-w-[80px] border border-[#D4E4FA]/60"
-                        >
-                          #{t}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-[10px] text-slate-400">#project</span>
-                    )}
-                    {project.tags && project.tags.length > 2 && (
-                      <span className="text-[10px] text-slate-400">
-                        +{project.tags.length - 2}
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-slate-600">
+                      <FileText className="w-3 h-3 text-slate-400" />
+                      {projectNotesCount}
+                    </span>
+                    {project.tags && project.tags.length > 0 && (
+                      <span className="bg-[#EAF1FB] text-[#3B66CC] font-bold px-2 py-0.5 rounded-full text-[10px] truncate max-w-[80px] border border-[#D4E4FA]/60">
+                        #{project.tags[0]}
                       </span>
                     )}
                   </div>
 
                   <span className="shrink-0 text-[10px] font-medium text-slate-400">
-                    {project.updatedAt || project.createdAt}
+                    {deadline ? deadline.text : (project.updatedAt || project.createdAt)}
                   </span>
                 </div>
               </div>
@@ -215,7 +246,7 @@ export const OldProjectsList: React.FC<OldProjectsListProps> = ({
             <div className="space-y-1">
               <h3 className="text-sm font-bold text-slate-900">Delete Project?</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Are you sure you want to delete <strong className="text-slate-800">"{projectToDelete.title}"</strong>? This will remove the project card from workspace.
+                Are you sure you want to delete <strong className="text-slate-800">"{projectToDelete.name || projectToDelete.title}"</strong>? This will remove the project card from workspace.
               </p>
             </div>
 

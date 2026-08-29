@@ -5,8 +5,6 @@ import {
   CheckSquare,
   FileText,
   Trash2,
-  MoreHorizontal,
-  Folder,
   Check,
   Circle,
   CheckCircle2,
@@ -62,24 +60,21 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   const [isSwiping, setIsSwiping] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Format date nicely (Stock Android / iOS style)
+  // Format date
   const formatNoteDate = (timestamp: number) => {
     if (!timestamp) return 'Today';
     const now = Date.now();
     const diff = now - timestamp;
     const date = new Date(timestamp);
 
-    // If within today
     if (diff < 86400000 && date.getDate() === new Date().getDate()) {
       return `Today, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     }
-    // If yesterday
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     if (date.toDateString() === yesterday.toDateString()) {
       return `Yesterday, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     }
-    // If this year
     if (date.getFullYear() === new Date().getFullYear()) {
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
@@ -90,18 +85,18 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   const getCategoryTheme = () => {
     const fn = (folderName || '').toLowerCase();
     if (fn.includes('personal') || fn.includes('home')) {
-      return { icon: <Home className="w-3.5 h-3.5 text-purple-600" />, bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200/70' };
+      return { icon: <Home className="w-3 h-3 text-neutral-600" /> };
     }
     if (fn.includes('work') || fn.includes('job') || fn.includes('corp')) {
-      return { icon: <Briefcase className="w-3.5 h-3.5 text-blue-600" />, bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200/70' };
+      return { icon: <Briefcase className="w-3 h-3 text-neutral-600" /> };
     }
     if (fn.includes('idea') || fn.includes('project')) {
-      return { icon: <Lightbulb className="w-3.5 h-3.5 text-amber-600" />, bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200/70' };
+      return { icon: <Lightbulb className="w-3 h-3 text-neutral-600" /> };
     }
     if (fn.includes('study') || fn.includes('exam') || fn.includes('school')) {
-      return { icon: <BookOpen className="w-3.5 h-3.5 text-emerald-600" />, bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200/70' };
+      return { icon: <BookOpen className="w-3 h-3 text-neutral-600" /> };
     }
-    return { icon: <FileText className="w-3.5 h-3.5 text-slate-500" />, bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200/80' };
+    return { icon: <FileText className="w-3 h-3 text-neutral-500" /> };
   };
 
   // Derive title if empty
@@ -123,7 +118,6 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     setTouchStartX(e.touches[0].clientX);
     setIsSwiping(false);
 
-    // Long-press timer (~450ms)
     longPressTimerRef.current = setTimeout(() => {
       if (onLongPress) {
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -141,16 +135,14 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     const currentX = e.touches[0].clientX;
     const diffX = currentX - touchStartX;
 
-    // If movement is detected, cancel long-press
     if (Math.abs(diffX) > 10 && longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
 
-    // Limit swipe bounds (-100 to 100)
-    if (Math.abs(diffX) > 15) {
+    if (diffX > -100 && diffX < 100) {
+      setSwipeOffset(diffX);
       setIsSwiping(true);
-      setSwipeOffset(Math.max(-90, Math.min(90, diffX)));
     }
   };
 
@@ -160,27 +152,23 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       longPressTimerRef.current = null;
     }
 
-    if (swipeOffset < -60) {
-      // Swiped Left -> Archive / Unarchive (Safe storage preservation)
-      if (onToggleArchive) {
-        onToggleArchive(note.id);
-      } else {
-        onDelete(note.id);
-      }
-    } else if (swipeOffset > 60) {
-      // Swiped Right -> Pin / Unpin
+    if (swipeOffset > 60) {
       onTogglePin(note.id);
+    } else if (swipeOffset < -60 && onToggleArchive) {
+      onToggleArchive(note.id);
     }
 
-    setTouchStartX(null);
     setSwipeOffset(0);
-    setTimeout(() => setIsSwiping(false), 50);
+    setIsSwiping(false);
+    setTouchStartX(null);
   };
 
   const handleMouseDown = () => {
     if (isMultiSelectMode) return;
     longPressTimerRef.current = setTimeout(() => {
-      if (onLongPress) onLongPress(note);
+      if (onLongPress) {
+        onLongPress(note);
+      }
     }, 500);
   };
 
@@ -191,20 +179,19 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     }
   };
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!isMultiSelectMode && onLongPress) {
-      onLongPress(note);
-    }
-  };
-
   const handleClick = (e: React.MouseEvent) => {
-    if (isSwiping) return;
     if (isMultiSelectMode) {
+      e.stopPropagation();
       onToggleSelect(note.id);
     } else {
       onSelect(note);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (onLongPress) {
+      onLongPress(note);
     }
   };
 
@@ -213,45 +200,28 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     const hasImages = note.images && note.images.length > 0;
     const hasSketches = note.sketches && note.sketches.length > 0;
 
-    const mediaPreview = (hasImages || hasSketches) && (
-      <div className="my-2 space-y-1.5">
-        {hasImages && (
-          <div className="rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200/80 aspect-16/9 relative shadow-2xs">
-            <img
-              src={note.images![0]}
-              alt="Photo attachment"
-              className="w-full h-full object-cover"
-            />
-            {note.images!.length > 1 && (
-              <span className="absolute bottom-1 right-1.5 bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-md">
-                +{note.images!.length - 1}
-              </span>
-            )}
-          </div>
-        )}
-        {hasSketches && !hasImages && (
-          <div className="rounded-xl overflow-hidden bg-neutral-50 border border-neutral-200/80 aspect-16/9 relative p-1.5 flex items-center justify-center">
-            <img
-              src={note.sketches![0]}
-              alt="Hand sketch"
-              className="max-h-full max-w-full object-contain"
-            />
-            {note.sketches!.length > 1 && (
-              <span className="absolute bottom-1 right-1.5 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-md">
-                +{note.sketches!.length - 1} sketch
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
+    let mediaPreview = null;
+    if (hasImages || hasSketches) {
+      const firstImage = hasImages ? note.images[0] : note.sketches[0];
+      const isSketch = !hasImages && hasSketches;
+      mediaPreview = (
+        <div className="w-full h-28 sm:h-32 rounded-lg overflow-hidden my-2 bg-neutral-100 border border-neutral-200">
+          <img
+            src={firstImage}
+            alt="Note Attachment Preview"
+            className={`w-full h-full ${isSketch ? 'object-contain p-2 bg-white' : 'object-cover'}`}
+          />
+        </div>
+      );
+    }
 
-    if (note.type === 'checklist') {
+    // Checklist preview
+    if (note.type === 'checklist' && note.checklistItems) {
       const itemsToShow = note.checklistItems.slice(0, 4);
       return (
         <div>
           {mediaPreview}
-          <div className="space-y-1.5 my-2">
+          <div className="space-y-1 my-2">
             {itemsToShow.map((item) => (
               <div
                 key={item.id}
@@ -264,7 +234,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                 className="flex items-center gap-1.5 text-xs group/item cursor-pointer select-none"
               >
                 {item.completed ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 fill-emerald-100" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                 ) : (
                   <Circle className="w-3.5 h-3.5 text-neutral-400 shrink-0 group-hover/item:text-neutral-700" />
                 )}
@@ -272,7 +242,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                   className={`line-clamp-1 leading-snug ${
                     item.completed
                       ? 'line-through text-neutral-400'
-                      : 'text-neutral-700 font-medium'
+                      : 'text-neutral-700 font-normal'
                   }`}
                 >
                   {item.text || 'Empty task'}
@@ -280,7 +250,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
               </div>
             ))}
             {note.checklistItems.length > 4 && (
-              <span className="text-[10px] font-semibold text-neutral-400 block pt-0.5">
+              <span className="text-[10px] font-medium text-neutral-400 block pt-0.5">
                 +{note.checklistItems.length - 4} more items
               </span>
             )}
@@ -289,30 +259,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       );
     }
 
-    // Text note markdown-lite preview
-    if (!note.body && !hasImages && !hasSketches) {
-      if (note.promptBoxes && note.promptBoxes.length > 0) {
-        return (
-          <div className="my-1.5 p-2 rounded-xl bg-slate-50 border border-slate-200/90 text-xs font-mono text-slate-700">
-            <span className="text-[10px] font-bold text-indigo-600 block mb-0.5 font-sans">Prompt: {note.promptBoxes[0].title}</span>
-            <p className="line-clamp-3 text-[11px] text-slate-600">{note.promptBoxes[0].prompt}</p>
-          </div>
-        );
-      }
-      if (note.importantQuestions && note.importantQuestions.length > 0) {
-        return (
-          <div className="my-1.5 p-2 rounded-xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900">
-            <span className="text-[10px] font-bold text-amber-700 block mb-0.5">Q: {note.importantQuestions[0].question}</span>
-            <p className="line-clamp-2 text-[11px] text-amber-800/80">{note.importantQuestions[0].answer || 'No answer saved'}</p>
-          </div>
-        );
-      }
-      return (
-        <p className="text-xs text-neutral-400 italic my-2">No additional text</p>
-      );
-    }
-
-    // Clean preview string (strips HTML tags and markdown symbols, formats to-do items)
+    // Clean preview string
     let cleanExcerpt = '';
     if (note.body) {
       cleanExcerpt = note.body
@@ -338,7 +285,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       <div>
         {mediaPreview}
         {cleanExcerpt && (
-          <p className="text-xs text-neutral-600 my-1.5 line-clamp-4 leading-relaxed whitespace-pre-line break-words font-normal">
+          <p className="text-xs text-neutral-600 my-1.5 line-clamp-3 leading-relaxed whitespace-pre-line break-words font-normal">
             {cleanExcerpt}
           </p>
         )}
@@ -351,37 +298,37 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   return (
     <div
       onContextMenu={handleContextMenu}
-      className="relative group w-full mb-3.5 select-none touch-manipulation [-webkit-touch-callout:none]"
+      className="relative group w-full mb-3 select-none touch-manipulation"
     >
       {/* Background swipe action reveal badges */}
       <div
-        className={`absolute inset-0 rounded-3xl flex items-center justify-between px-4 transition-opacity ${
+        className={`absolute inset-0 rounded-xl flex items-center justify-between px-4 transition-opacity ${
           swipeOffset !== 0 ? 'opacity-100' : 'opacity-0'
         }`}
       >
         <div
-          className={`flex items-center gap-1.5 text-xs font-bold ${
-            swipeOffset > 0 ? 'text-slate-900' : 'opacity-0'
+          className={`flex items-center gap-1.5 text-xs font-semibold ${
+            swipeOffset > 0 ? 'text-neutral-900' : 'opacity-0'
           }`}
         >
-          <Pin className="w-4 h-4 fill-slate-900" />
+          <Pin className="w-3.5 h-3.5 fill-neutral-900" />
           <span>{note.isPinned ? 'Unpin' : 'Pin'}</span>
         </div>
         <div
-          className={`flex items-center gap-1.5 text-xs font-bold ${
-            note.isArchived ? 'text-emerald-700' : 'text-amber-700'
+          className={`flex items-center gap-1.5 text-xs font-semibold ${
+            note.isArchived ? 'text-neutral-900' : 'text-neutral-700'
           } ${swipeOffset < 0 ? 'opacity-100' : 'opacity-0'}`}
         >
           <span>{note.isArchived ? 'Restore' : 'Archive'}</span>
           {note.isArchived ? (
-            <ArchiveRestore className="w-4 h-4" />
+            <ArchiveRestore className="w-3.5 h-3.5" />
           ) : (
-            <Archive className="w-4 h-4" />
+            <Archive className="w-3.5 h-3.5" />
           )}
         </div>
       </div>
 
-      {/* Main Card matching Image 1 */}
+      {/* Main Card */}
       <div
         id={`note-card-${note.id}`}
         onClick={handleClick}
@@ -395,13 +342,13 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           transform: `translateX(${swipeOffset}px)`,
           transition: isSwiping ? 'none' : 'transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1)',
         }}
-        className={`relative w-full rounded-2xl p-4 transition-all duration-150 cursor-pointer border flex flex-col justify-between select-none touch-manipulation [-webkit-touch-callout:none] ${
+        className={`relative w-full rounded-xl p-3.5 transition-all duration-150 cursor-pointer border flex flex-col justify-between select-none touch-manipulation ${
           isSelected
-            ? 'bg-[#EAF1FB] border-[#5B86E5] ring-2 ring-[#5B86E5] shadow-md'
+            ? 'bg-neutral-50 border-neutral-900 ring-1 ring-neutral-900 shadow-xs'
             : note.isPinned
-            ? 'bg-white border-[#D4E4FA] shadow-[0_4px_16px_rgba(91,134,229,0.08)] hover:border-[#5B86E5] hover:shadow-[0_6px_20px_rgba(91,134,229,0.14)]'
-            : 'bg-white border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:border-slate-300 hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)]'
-        } active:scale-[0.99]`}
+            ? 'bg-white border-neutral-300 shadow-2xs hover:border-neutral-400'
+            : 'bg-white border-neutral-200 shadow-2xs hover:border-neutral-300'
+        }`}
       >
         {/* Multi-select checkmark circle */}
         {isMultiSelectMode && (
@@ -410,51 +357,61 @@ export const NoteCard: React.FC<NoteCardProps> = ({
               e.stopPropagation();
               onToggleSelect(note.id);
             }}
-            className={`absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center border transition-all z-10 ${
+            className={`absolute top-3 right-3 w-4 h-4 rounded-full flex items-center justify-center border transition-all z-10 ${
               isSelected
-                ? 'bg-[#5B86E5] border-[#5B86E5] text-white shadow-xs'
-                : 'bg-white/90 border-slate-300 text-transparent'
+                ? 'bg-neutral-900 border-neutral-900 text-white'
+                : 'bg-white border-neutral-300 text-transparent'
             }`}
           >
-            <Check className="w-3 h-3 stroke-[3]" />
+            <Check className="w-2.5 h-2.5 stroke-[3]" />
           </div>
         )}
 
-        {/* Top bar: Category Pill with Icon + Pin indicator */}
-        <div className="flex items-center justify-between gap-1 mb-2">
+        {/* Top bar: Mode / Category Pill with Icon + Pin indicator */}
+        <div className="flex items-center justify-between gap-1 mb-1.5">
           <div className="flex items-center gap-1.5 min-w-0">
-            {folderName ? (
-              <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full ${theme.bg} ${theme.text} ${theme.border} border`}>
+            {note.mode === 'student' ? (
+              <div className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+                <GraduationCap className="w-3 h-3 text-blue-600 shrink-0" />
+                <span className="truncate max-w-[120px]">{note.studentSubject || folderName || 'Student'}</span>
+              </div>
+            ) : note.mode === 'developer' ? (
+              <div className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100">
+                <Terminal className="w-3 h-3 text-purple-600 shrink-0" />
+                <span className="truncate max-w-[120px]">{folderName || 'Dev'}</span>
+              </div>
+            ) : folderName ? (
+              <div className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-700">
                 {theme.icon}
-                <span className="truncate max-w-[100px]">{folderName}</span>
+                <span className="truncate max-w-[120px]">{folderName}</span>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-slate-50 text-slate-600 border border-slate-200/70">
+              <div className="flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-neutral-100 text-neutral-600">
                 {note.type === 'checklist' ? (
-                  <CheckSquare className="w-3.5 h-3.5 text-[#5B86E5]" />
+                  <CheckSquare className="w-3 h-3 text-neutral-600" />
                 ) : (
-                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  <FileText className="w-3 h-3 text-neutral-500" />
                 )}
                 <span>General</span>
               </div>
             )}
 
             {note.isArchived && (
-              <span className="text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full">
+              <span className="text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
                 Archived
               </span>
             )}
           </div>
 
           {note.isPinned && !isMultiSelectMode && (
-            <div className="text-[#5B86E5] p-0.5">
-              <Pin className="w-3.5 h-3.5 fill-[#5B86E5]" />
+            <div className="text-neutral-800 p-0.5">
+              <Pin className="w-3 h-3 fill-neutral-800" />
             </div>
           )}
         </div>
 
         {/* Title */}
-        <h3 className="font-bold text-sm text-slate-900 leading-snug line-clamp-2 break-words">
+        <h3 className="font-semibold text-sm text-neutral-900 leading-snug line-clamp-2 break-words">
           {displayTitle()}
         </h3>
 
@@ -473,84 +430,69 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           (note.devVideos && note.devVideos.length > 0) ||
           note.mode === 'student' ||
           note.mode === 'developer') && (
-          <div className="flex flex-wrap items-center gap-1.5 mt-1.5 mb-2.5">
-            {/* Student Mode indicator */}
-            {note.mode === 'student' && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-full">
-                <GraduationCap className="w-2.5 h-2.5" />
-                Student
-              </span>
-            )}
-
-            {/* Developer Mode indicator */}
-            {note.mode === 'developer' && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-full">
-                <Terminal className="w-2.5 h-2.5 text-indigo-600" />
-                Developer
-              </span>
-            )}
-
-            {/* API Keys badge */}
+          <div className="flex flex-wrap items-center gap-1 mt-1 mb-2">
+            {/* API Keys count */}
             {note.apiKeys && note.apiKeys.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full">
-                <Key className="w-2.5 h-2.5 text-amber-600" />
-                {note.apiKeys.length} Key{note.apiKeys.length > 1 ? 's' : ''}
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <Key className="w-2.5 h-2.5" />
+                {note.apiKeys.length} {note.apiKeys.length > 1 ? 'Keys' : 'Key'}
               </span>
             )}
 
-            {/* Prompt Boxes badge */}
+            {/* Prompt Boxes count */}
             {note.promptBoxes && note.promptBoxes.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full">
-                <MessageSquareCode className="w-2.5 h-2.5 text-indigo-600" />
-                {note.promptBoxes.length} Prompt{note.promptBoxes.length > 1 ? 's' : ''}
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <MessageSquareCode className="w-2.5 h-2.5" />
+                {note.promptBoxes.length} {note.promptBoxes.length > 1 ? 'Prompts' : 'Prompt'}
               </span>
             )}
 
-            {/* Spec Files badge */}
+            {/* Spec Files count */}
             {note.specFiles && note.specFiles.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                <FileCode className="w-2.5 h-2.5 text-emerald-600" />
-                {note.specFiles.length} Spec{note.specFiles.length > 1 ? 's' : ''}
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <FileCode className="w-2.5 h-2.5" />
+                {note.specFiles.length} {note.specFiles.length > 1 ? 'Specs' : 'Spec'}
               </span>
             )}
 
-            {/* Dev Websites badge */}
+            {/* Dev Websites count */}
             {note.devWebsites && note.devWebsites.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
-                <Globe className="w-2.5 h-2.5 text-blue-600" />
-                {note.devWebsites.length} Portal{note.devWebsites.length > 1 ? 's' : ''}
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <Globe className="w-2.5 h-2.5" />
+                {note.devWebsites.length}
               </span>
             )}
 
-            {/* Dev Videos badge */}
-            {note.devVideos && note.devVideos.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-800 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-full">
-                <Video className="w-2.5 h-2.5 text-rose-600" />
-                {note.devVideos.length} Video{note.devVideos.length > 1 ? 's' : ''}
+            {/* YouTube / Video Links count */}
+            {((note.youtubeLinks && note.youtubeLinks.length > 0) ||
+              (note.devVideos && note.devVideos.length > 0)) && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <Video className="w-2.5 h-2.5" />
+                {(note.youtubeLinks?.length || 0) + (note.devVideos?.length || 0)}
               </span>
             )}
 
-            {/* YouTube Links badge */}
-            {note.youtubeLinks && note.youtubeLinks.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">
-                <Youtube className="w-2.5 h-2.5 fill-red-600 text-red-600" />
-                {note.youtubeLinks.length} Video{note.youtubeLinks.length > 1 ? 's' : ''}
+            {/* Formulas count */}
+            {note.quickFormulas && note.quickFormulas.length > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <BookOpen className="w-2.5 h-2.5" />
+                {note.quickFormulas.length} {note.quickFormulas.length > 1 ? 'Formulas' : 'Formula'}
               </span>
             )}
 
-            {/* Important Questions badge */}
+            {/* Important Questions count */}
             {note.importantQuestions && note.importantQuestions.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
-                <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
-                {note.importantQuestions.length} Imp Q{note.importantQuestions.length > 1 ? 's' : ''}
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <Star className="w-2.5 h-2.5" />
+                {note.importantQuestions.length} Q&amp;A
               </span>
             )}
 
-            {/* Web Resources badge */}
+            {/* Web Resources count */}
             {note.webLinks && note.webLinks.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-sky-800 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full">
-                <Globe className="w-2.5 h-2.5 text-sky-600" />
-                {note.webLinks.length} Link{note.webLinks.length > 1 ? 's' : ''}
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded">
+                <Globe className="w-2.5 h-2.5" />
+                {note.webLinks.length}
               </span>
             )}
 
@@ -563,7 +505,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                     e.stopPropagation();
                     if (onTagClick) onTagClick(tag.name, e);
                   }}
-                  className="text-[10px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-0.5 rounded-full border border-slate-200/60 transition cursor-pointer"
+                  className="text-[10px] font-medium text-neutral-600 bg-neutral-100 hover:bg-neutral-200 px-1.5 py-0.5 rounded transition cursor-pointer"
                 >
                   #{tag.name}
                 </span>
@@ -571,14 +513,13 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           </div>
         )}
 
-        {/* Footer: timestamp with clock icon + quick actions */}
-        <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-medium">
+        {/* Footer: timestamp + quick hover actions */}
+        <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px] text-neutral-400 font-normal">
           <div className="flex items-center gap-1">
-            <Clock className="w-3 h-3 text-slate-400" />
+            <Clock className="w-3 h-3 text-neutral-400" />
             <span>{formatNoteDate(note.updatedAt || note.createdAt)}</span>
           </div>
 
-          {/* Quick hover actions for desktop / mouse users */}
           <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {onToggleArchive && (
               <button
@@ -586,7 +527,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                   e.stopPropagation();
                   onToggleArchive(note.id);
                 }}
-                className="p-1 rounded-md text-slate-400 hover:text-amber-700 hover:bg-amber-50"
+                className="p-1 rounded text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100"
                 title={note.isArchived ? 'Restore from archive' : 'Archive note'}
               >
                 {note.isArchived ? <ArchiveRestore className="w-3 h-3" /> : <Archive className="w-3 h-3" />}
@@ -597,17 +538,17 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                 e.stopPropagation();
                 onTogglePin(note.id);
               }}
-              className="p-1 rounded-md text-slate-400 hover:text-[#5B86E5] hover:bg-[#EAF1FB]"
+              className="p-1 rounded text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100"
               title={note.isPinned ? 'Unpin' : 'Pin to top'}
             >
-              <Pin className={`w-3 h-3 ${note.isPinned ? 'fill-[#5B86E5] text-[#5B86E5]' : ''}`} />
+              <Pin className={`w-3 h-3 ${note.isPinned ? 'fill-neutral-800 text-neutral-800' : ''}`} />
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(note.id);
               }}
-              className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50"
+              className="p-1 rounded text-neutral-400 hover:text-red-600 hover:bg-red-50"
               title="Delete note"
             >
               <Trash2 className="w-3 h-3" />
