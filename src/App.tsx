@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AppMode, NoteItem, FolderItem, ProjectItem, AppBranding, AuthUser } from './types';
 import { dbService } from './services/db';
-import { subscribeToAuth } from './services/firebase';
+import { localStore, DEFAULT_FOLDERS } from './services/localStore';
+import { supabaseAuth, subscribeToAuth } from './services/supabase';
 import { firestoreSyncService } from './services/firestoreSync';
 import { StorageProtectionBanner } from './components/StorageProtectionBanner';
 import { AkNotesFileStructure } from './services/fileBackupService';
 import { adminService } from './services/adminService';
-import { ADS_SLIDES, INITIAL_PROJECTS } from './data/sampleData';
+import { ADS_SLIDES } from './data/sampleData';
 import { ModeSelector } from './components/ModeSelector';
 import { SearchBar } from './components/SearchBar';
 import { FolderChips } from './components/FolderChips';
@@ -36,11 +37,22 @@ import { QuickActions } from './components/QuickActions';
 import { Plus, Smartphone, Monitor, User as UserIcon, Zap, Download } from 'lucide-react';
 
 export default function App() {
-  // State for notes & folders from IndexedDB
-  const [notes, setNotes] = useState<NoteItem[]>([]);
-  const [folders, setFolders] = useState<FolderItem[]>([]);
-  const [projects, setProjects] = useState<ProjectItem[]>(INITIAL_PROJECTS);
-  const [isLoading, setIsLoading] = useState(true);
+  // Synchronous fast-path initialization for instant 0ms rendering
+  const initialUser = typeof window !== 'undefined' ? supabaseAuth.getCurrentUser() : null;
+  const initialUid = initialUser?.uid;
+  const initialVault = initialUid ? localStore.getUserVault(initialUid) : null;
+  const initialCachedNotes = initialVault?.notes || (typeof window !== 'undefined' ? (() => {
+    try {
+      const c = localStorage.getItem('project_notes_cache');
+      return c ? JSON.parse(c) : [];
+    } catch { return []; }
+  })() : []);
+
+  // State for notes & folders from IndexedDB / User Vault
+  const [notes, setNotes] = useState<NoteItem[]>(initialCachedNotes);
+  const [folders, setFolders] = useState<FolderItem[]>(initialVault?.folders || DEFAULT_FOLDERS);
+  const [projects, setProjects] = useState<ProjectItem[]>(initialVault?.projects || []);
+  const [isLoading, setIsLoading] = useState(false);
   const [branding, setBranding] = useState<AppBranding>(adminService.getBranding());
 
   useEffect(() => {
@@ -53,7 +65,7 @@ export default function App() {
   }, []);
 
   // Authentication & Cloud Sync
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(initialUser);
   const [customAvatar, setCustomAvatar] = useState<string>(() => {
     return localStorage.getItem('projectnotes_custom_photo_url') || '';
   });
@@ -161,11 +173,7 @@ export default function App() {
         ]);
         setNotes(loadedNotes || []);
         setFolders(loadedFolders || []);
-        if (loadedProjects && loadedProjects.length > 0) {
-          setProjects(loadedProjects);
-        } else if (!uid) {
-          setProjects(INITIAL_PROJECTS);
-        }
+        setProjects(loadedProjects || []);
       } catch (err) {
         console.error('Failed to load data from database', err);
       } finally {
@@ -265,7 +273,7 @@ export default function App() {
           dbService.clearSessionCaches();
           setNotes([]);
           setFolders([]);
-          setProjects(INITIAL_PROJECTS);
+          setProjects([]);
           setCustomAvatar('');
           setCustomName('');
           try {
@@ -1158,7 +1166,7 @@ export default function App() {
                   onUserLoggedOut={() => {
                     setNotes([]);
                     setFolders([]);
-                    setProjects(INITIAL_PROJECTS);
+                    setProjects([]);
                   }}
                   onOpenAuthModal={() => setIsAuthModalOpen(true)}
                   onOpenNotesFileModal={() => setIsNotesFileModalOpen(true)}

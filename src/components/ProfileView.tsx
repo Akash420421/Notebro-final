@@ -761,33 +761,38 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </h3>
         <div className="bg-white rounded-2xl border border-[#E5E7EB] divide-y divide-[#F3F4F6] overflow-hidden shadow-none">
           {/* Cloud Sync */}
-          <div className="flex items-center justify-between px-4 py-3">
+          <button
+            type="button"
+            onClick={handleToggleCloudSync}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#F9FAFB] transition cursor-pointer"
+          >
             <div>
-              <div className="text-[14px] font-medium text-[#111827]">
-                Cloud Backup Sync
+              <div className="text-[14px] font-medium text-[#111827] flex items-center gap-2">
+                <span>Supabase Cloud Sync</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  currentUser ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {currentUser ? 'Active' : 'Offline / Local'}
+                </span>
               </div>
               <div className="text-[12px] text-[#6B7280]">
-                {currentUser ? 'Automatic real-time sync active' : 'Sign in to sync across devices'}
+                {currentUser ? 'Real-time database sync active & ready' : 'Sign in to sync across all devices'}
               </div>
             </div>
 
-            {/* Native iOS style toggle button */}
-            <button
-              type="button"
-              id="profile-cloud-sync-toggle"
-              onClick={handleToggleCloudSync}
-              className={`w-11 h-6 flex items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer ${
+            {/* Native iOS style toggle indicator */}
+            <div
+              className={`w-11 h-6 flex items-center rounded-full p-0.5 transition-colors duration-200 ${
                 currentUser ? 'bg-[#111827]' : 'bg-[#E5E7EB]'
               }`}
-              title={currentUser ? 'Click to view sync status' : 'Sign in to enable cloud sync'}
             >
               <div
                 className={`bg-white w-5 h-5 rounded-full shadow-xs transform transition-transform duration-200 ${
                   currentUser ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
-            </button>
-          </div>
+            </div>
+          </button>
         </div>
       </div>
 

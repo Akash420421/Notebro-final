@@ -71,7 +71,7 @@ export const OldProjectsList: React.FC<OldProjectsListProps> = ({
       <div className="flex items-center justify-between mb-2.5 px-0.5">
         <div className="flex items-center gap-2">
           <h2 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight">
-            Old projects
+            Projects
           </h2>
           <span className="text-[11px] font-bold px-2.5 py-0.5 bg-[#EAF1FB] text-[#3B66CC] border border-[#D4E4FA]/60 rounded-full">
             {projects.length}
@@ -90,10 +90,10 @@ export const OldProjectsList: React.FC<OldProjectsListProps> = ({
         <div className="text-center py-8 px-4 bg-white/80 rounded-[26px] border border-slate-200 shadow-xs">
           <Layers className="w-6 h-6 mx-auto mb-1.5 text-slate-400" />
           <p className="text-slate-700 text-xs font-bold">
-            No projects in this category
+            No projects yet
           </p>
           <p className="text-slate-400 text-[11px] mt-0.5">
-            Tap "+ New project" below to create one.
+            Tap "+ New Project" above to create your first project.
           </p>
         </div>
       ) : (
