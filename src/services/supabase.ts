@@ -4,21 +4,113 @@ import { AuthUser, NoteItem, FolderItem, ProjectItem, FeedbackItem, AppBranding,
 // Supabase Connection Credentials (with fallback to client env)
 declare const window: any;
 const metaEnv = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
-const SUPABASE_URL =
-  (metaEnv.VITE_SUPABASE_URL || metaEnv.NEXT_PUBLIC_SUPABASE_URL) ||
-  'YOUR_SUPABASE_URL';
+const rawSupabaseUrl = (metaEnv.VITE_SUPABASE_URL || metaEnv.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+const rawSupabaseKey = (metaEnv.VITE_SUPABASE_ANON_KEY || metaEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '').trim();
 
-const SUPABASE_ANON_KEY =
-  (metaEnv.VITE_SUPABASE_ANON_KEY || metaEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ||
-  'YOUR_SUPABASE_ANON_KEY';
+function isValidHttpUrl(urlStr?: string): boolean {
+  if (!urlStr || typeof urlStr !== 'string') return false;
+  const trimmed = urlStr.trim();
+  if (
+    !trimmed ||
+    trimmed.startsWith('YOUR_') ||
+    trimmed.includes('your-project') ||
+    trimmed === 'YOUR_SUPABASE_URL'
+  ) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
 
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+function isValidKey(keyStr?: string): boolean {
+  if (!keyStr || typeof keyStr !== 'string') return false;
+  const trimmed = keyStr.trim();
+  return (
+    trimmed.length > 10 &&
+    !trimmed.startsWith('YOUR_') &&
+    trimmed !== 'YOUR_SUPABASE_ANON_KEY'
+  );
+}
+
+function createChainableQueryProxy(): any {
+  const handler: ProxyHandler<any> = {
+    get(_target, prop) {
+      if (prop === 'then') {
+        return (resolve: (val: any) => any) => resolve({ data: null, error: null, count: 0 });
+      }
+      if (prop === 'catch') {
+        return (reject: (val: any) => any) => Promise.resolve({ data: null, error: null, count: 0 }).catch(reject);
+      }
+      if (typeof prop === 'symbol') return undefined;
+      return (..._args: any[]) => new Proxy({}, handler);
+    },
+  };
+  return new Proxy({}, handler);
+}
+
+function initSupabaseClient(): SupabaseClient {
+  if (isValidHttpUrl(rawSupabaseUrl) && isValidKey(rawSupabaseKey)) {
+    try {
+      return createClient(rawSupabaseUrl, rawSupabaseKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      });
+    } catch (err) {
+      console.warn('Failed to initialize Supabase client:', err);
+    }
+  }
+
+  // Graceful fallback mock client proxy when Supabase credentials are not configured
+  const mockAuth = {
+    onAuthStateChange: (_callback: any) => ({
+      data: { subscription: { unsubscribe: () => {} } },
+    }),
+    signUp: async () => ({
+      data: { user: null, session: null },
+      error: new Error('Supabase is not configured with a valid URL or Key.'),
+    }),
+    signInWithPassword: async () => ({
+      data: { user: null, session: null },
+      error: new Error('Supabase is not configured with a valid URL or Key.'),
+    }),
+    signOut: async () => ({ error: null }),
+    getSession: async () => ({ data: { session: null }, error: null }),
+    getUser: async () => ({ data: { user: null }, error: null }),
+    setSession: async () => ({ data: { session: null }, error: null }),
+    refreshSession: async () => ({ data: { session: null }, error: null }),
+    resetPasswordForEmail: async () => ({ data: {}, error: null }),
+    updateUser: async () => ({ data: { user: null }, error: null }),
+  };
+
+  const fallbackClient: any = {
+    auth: mockAuth,
+    from: (_table: string) => createChainableQueryProxy(),
+    rpc: (_fn: string) => createChainableQueryProxy(),
+    channel: () => ({
+      on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }),
+      subscribe: () => ({ unsubscribe: () => {} }),
+    }),
+    removeChannel: () => {},
+    storage: {
+      from: () => ({
+        upload: async () => ({ data: null, error: new Error('Supabase storage not configured') }),
+        getPublicUrl: () => ({ data: { publicUrl: '' } }),
+        download: async () => ({ data: null, error: new Error('Supabase storage not configured') }),
+      }),
+    },
+  };
+
+  return fallbackClient as unknown as SupabaseClient;
+}
+
+export const supabase: SupabaseClient = initSupabaseClient();
 
 const STORAGE_SESSION_KEY = 'notebro_supabase_user_session';
 const AUTH_EVENT_NAME = 'notebro_supabase_auth_change';
