@@ -29,7 +29,7 @@ export const FolderChips: React.FC<FolderChipsProps> = ({
   return (
     <div className="w-full">
       {/* Horizontal row, flex-start, left aligned, gap: 8px, overflow-x: auto, no wrap */}
-      <div className="flex items-center justify-start gap-2 overflow-x-auto select-none py-0.5 scrollbar-none">
+      <div className="flex items-center justify-start gap-2 overflow-x-auto select-none py-0.5 scrollbar-none smooth-scroll overscroll-contain touch-pan-x">
         {/* 1) 'All' Chip */}
         <button
           type="button"

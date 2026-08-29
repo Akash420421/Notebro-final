@@ -887,14 +887,14 @@ export default function App() {
 
       {/* Viewport Container */}
       <div
-        className={`w-full bg-white flex flex-col justify-between shadow-xl transition-all duration-300 relative ${
+        className={`w-full bg-white flex flex-col justify-between shadow-xl transition-all duration-300 relative min-h-[100dvh] ${
           isMobileFrame
             ? 'max-w-[420px] min-h-[850px] rounded-[44px] border-[12px] border-neutral-900 ring-8 ring-neutral-200/80 my-2 overflow-hidden'
-            : 'w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl min-h-screen sm:min-h-[880px] sm:my-3 sm:rounded-3xl sm:border sm:border-neutral-200/90 sm:shadow-2xl overflow-hidden'
+            : 'w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl min-h-[100dvh] sm:min-h-[880px] sm:my-3 sm:rounded-3xl sm:border sm:border-neutral-200/90 sm:shadow-2xl overflow-hidden'
         }`}
       >
         {/* Clean iOS / Linear Top Header */}
-        <header className="w-full h-14 sm:h-15 px-4 sm:px-6 flex items-center justify-between border-b border-[#E5E7EB] bg-white sticky top-0 z-20 shrink-0">
+        <header className="w-full h-14 sm:h-15 px-4 sm:px-6 flex items-center justify-between border-b border-[#E5E7EB] bg-white/95 backdrop-blur-md sticky top-0 z-20 shrink-0">
           <div className="flex items-center gap-2.5">
             {/* Custom App Mark / Brand Logo - 10 clicks unlocks hidden control panel */}
             <button
@@ -971,7 +971,7 @@ export default function App() {
         </header>
 
         {/* Scrollable Main Viewport */}
-        <main className={`flex-1 px-4 sm:px-6 py-4 sm:py-6 space-y-5 overflow-y-auto pb-32 sm:pb-36 ${activeTab === 'profile' ? 'bg-[#F5F5F7]' : 'bg-white'}`}>
+        <main className={`flex-1 px-4 sm:px-6 py-4 sm:py-6 space-y-5 overflow-y-auto smooth-scroll overscroll-contain pb-32 sm:pb-36 ${activeTab === 'profile' ? 'bg-[#F5F5F7]' : 'bg-white'}`}>
           {selectedProject ? (
             <ProjectDetailView
               project={selectedProject}

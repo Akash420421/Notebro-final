@@ -1,15 +1,24 @@
 @import "tailwindcss";
 
 @layer base {
-  /* Hide scrollbars globally across all browsers */
+  /* Hide scrollbars globally across all browsers while keeping smooth momentum scroll */
   * {
     scrollbar-width: none !important;
     -ms-overflow-style: none !important;
+    -webkit-tap-highlight-color: transparent;
   }
   *::-webkit-scrollbar {
     display: none !important;
     width: 0 !important;
     height: 0 !important;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   html, body {
@@ -19,8 +28,15 @@
     scrollbar-width: none;
     -ms-overflow-style: none;
     overflow-x: hidden;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     -webkit-touch-callout: none;
+    touch-action: manipulation;
+    overscroll-behavior-y: none;
+  }
+
+  /* GPU accelerate animations and smooth transitions */
+  button, a, input, select, textarea {
+    touch-action: manipulation;
   }
 
   html.dark, body.dark {
@@ -55,6 +71,21 @@
     background-color: #1F2937;
     border-color: #374151;
   }
+}
+
+/* Smooth momentum scrolling utility */
+.smooth-scroll {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* GPU acceleration for cards and modals */
+.gpu-layer {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform, opacity;
 }
 
 /* Ambient Clean Background */
