@@ -32,6 +32,7 @@ import { AdminPanelModal } from './components/AdminPanelModal';
 import { SecretAdminAccessModal } from './components/SecretAdminAccessModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
+import { QuickActions } from './components/QuickActions';
 import { Plus, Smartphone, Monitor, User as UserIcon, Zap, Download } from 'lucide-react';
 
 export default function App() {
@@ -889,6 +890,28 @@ export default function App() {
                   selectedTag={selectedTag}
                   onSelectTag={setSelectedTag}
                   availableTags={availableTags}
+                />
+              </section>
+
+              {/* Quick Actions (Adapted directly in Light Theme from requested UI) */}
+              <section id="quick-actions-section">
+                <QuickActions
+                  onNewNote={() => {
+                    setNewNoteInitialType('text');
+                    setIsCreatingNewNote(true);
+                  }}
+                  onNewProject={() => {
+                    setIsNewProjectModalOpen(true);
+                  }}
+                  onNewTag={(newTagName) => {
+                    setSelectedTag(newTagName);
+                  }}
+                  onImport={() => {
+                    setIsNotesFileModalOpen(true);
+                  }}
+                  onViewAll={() => {
+                    setActiveTab('projects');
+                  }}
                 />
               </section>
 
