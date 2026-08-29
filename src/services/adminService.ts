@@ -4,6 +4,8 @@ import { supabase } from './supabase';
 const CACHED_BRANDING_KEY = 'projectnotes_app_branding';
 const BRANDING_SUBSCRIBERS = new Set<(branding: AppBranding) => void>();
 
+const CACHED_USERS_KEY = 'notebro_registered_users_cache';
+
 class AdminService {
   private currentBranding: AppBranding = {
     logoUrl: '/app-logo.png',
@@ -138,16 +140,50 @@ class AdminService {
   }): Promise<void> {
     if (!user || (!user.id && !user.email)) return;
 
+    const userEmail = user.email || 'user@notebro.app';
+    const userId = user.id || `usr_${userEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
     const payload = {
-      id: user.id,
-      email: user.email,
-      display_name: user.displayName || user.email.split('@')[0] || 'User',
+      id: userId,
+      email: userEmail,
+      display_name: user.displayName || userEmail.split('@')[0] || 'User',
       photo_url: user.photoURL || '',
       bio: user.bio || '',
       notes_count: user.notesCount || 0,
       provider: user.provider || 'supabase',
       last_active_at: Date.now(),
     };
+
+    // 0. Update Local Registered Users Cache
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedRaw = localStorage.getItem(CACHED_USERS_KEY);
+        const map = new Map<string, AdminUserItem>();
+        if (cachedRaw) {
+          const list: AdminUserItem[] = JSON.parse(cachedRaw);
+          if (Array.isArray(list)) {
+            list.forEach((u) => {
+              if (u && (u.id || u.email)) map.set(u.id || u.email, u);
+            });
+          }
+        }
+        const existing = map.get(userId) || map.get(userEmail);
+        const updatedItem: AdminUserItem = {
+          id: userId,
+          email: userEmail,
+          displayName: payload.display_name,
+          photoURL: payload.photo_url,
+          bio: payload.bio,
+          notesCount: payload.notes_count,
+          createdAt: existing?.createdAt || Date.now(),
+          lastActiveAt: Date.now(),
+          provider: payload.provider,
+          role: existing?.role || (userEmail.includes('admin') ? 'admin' : 'user'),
+        };
+        map.set(userId, updatedItem);
+        localStorage.setItem(CACHED_USERS_KEY, JSON.stringify(Array.from(map.values())));
+      } catch (e) {}
+    }
 
     // 1. Sync to server API
     try {
@@ -164,14 +200,37 @@ class AdminService {
     } catch (e) {}
   }
 
-  public async fetchAllUsers(): Promise<AdminUserItem[]> {
+  public async fetchAllUsers(currentUser?: { id?: string; uid?: string; email?: string; displayName?: string; photoURL?: string; bio?: string; notesCount?: number } | null): Promise<AdminUserItem[]> {
+    const usersMap = new Map<string, AdminUserItem>();
+
+    // 0. Read from local registered users cache
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedRaw = localStorage.getItem(CACHED_USERS_KEY);
+        if (cachedRaw) {
+          const list: AdminUserItem[] = JSON.parse(cachedRaw);
+          if (Array.isArray(list)) {
+            list.forEach((u) => {
+              if (u && (u.id || u.email)) {
+                usersMap.set(u.id || u.email, u);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    }
+
     // 1. Try server API
     try {
       const res = await fetch('/api/admin/users');
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.users)) {
-          return data.users;
+          data.users.forEach((u: AdminUserItem) => {
+            if (u && (u.id || u.email)) {
+              usersMap.set(u.id || u.email, u);
+            }
+          });
         }
       }
     } catch (e) {}
@@ -180,22 +239,83 @@ class AdminService {
     try {
       const { data } = await supabase.from('users').select('*').limit(100);
       if (Array.isArray(data)) {
-        return data.map((u) => ({
-          id: u.id,
-          email: u.email || 'user@notebro.app',
-          displayName: u.display_name || 'Note Bro Member',
-          photoURL: u.photo_url,
-          bio: u.bio,
-          notesCount: u.notes_count || 0,
-          createdAt: u.created_at ? new Date(u.created_at).getTime() : Date.now(),
-          lastActiveAt: u.last_active_at || Date.now(),
-          provider: u.provider || 'supabase',
-          role: u.role || 'user',
-        }));
+        data.forEach((u) => {
+          if (u && (u.id || u.email)) {
+            const item: AdminUserItem = {
+              id: u.id,
+              email: u.email || 'user@notebro.app',
+              displayName: u.display_name || 'Note Bro Member',
+              photoURL: u.photo_url,
+              bio: u.bio,
+              notesCount: u.notes_count || 0,
+              createdAt: u.created_at ? new Date(u.created_at).getTime() : Date.now(),
+              lastActiveAt: u.last_active_at || Date.now(),
+              provider: u.provider || 'supabase',
+              role: u.role || 'user',
+            };
+            usersMap.set(item.id || item.email, item);
+          }
+        });
       }
     } catch (e) {}
 
-    return [];
+    // 3. Ensure active session user is ALWAYS included with their ID
+    if (currentUser && (currentUser.uid || currentUser.id || currentUser.email)) {
+      const uid = currentUser.uid || currentUser.id || `usr_${(currentUser.email || '').replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const email = currentUser.email || 'user@notebro.app';
+      const existing = usersMap.get(uid) || usersMap.get(email);
+
+      const activeUserItem: AdminUserItem = {
+        id: uid,
+        email: email,
+        displayName: currentUser.displayName || existing?.displayName || email.split('@')[0] || 'Active User',
+        photoURL: currentUser.photoURL || existing?.photoURL || '',
+        bio: currentUser.bio || existing?.bio || '',
+        notesCount: typeof currentUser.notesCount === 'number' ? currentUser.notesCount : existing?.notesCount || 0,
+        createdAt: existing?.createdAt || Date.now(),
+        lastActiveAt: Date.now(),
+        provider: 'supabase',
+        role: existing?.role || (email.includes('admin') ? 'admin' : 'user'),
+      };
+      usersMap.set(uid, activeUserItem);
+    }
+
+    // 4. If still empty, check stored session user from localStorage
+    if (usersMap.size === 0 && typeof window !== 'undefined') {
+      try {
+        const storedSession = localStorage.getItem('notebro_supabase_user_session') || localStorage.getItem('projectnotes_custom_auth_user');
+        if (storedSession) {
+          const parsed = JSON.parse(storedSession);
+          if (parsed && (parsed.uid || parsed.email)) {
+            const uid = parsed.uid || `usr_${(parsed.email || '').replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const item: AdminUserItem = {
+              id: uid,
+              email: parsed.email || 'user@notebro.app',
+              displayName: parsed.displayName || parsed.email?.split('@')[0] || 'Note Bro Member',
+              photoURL: parsed.photoURL || '',
+              bio: parsed.bio || '',
+              notesCount: 0,
+              createdAt: Date.now(),
+              lastActiveAt: Date.now(),
+              provider: 'supabase',
+              role: 'user',
+            };
+            usersMap.set(uid, item);
+          }
+        }
+      } catch (e) {}
+    }
+
+    const finalList = Array.from(usersMap.values()).sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+
+    // Update cache
+    if (typeof window !== 'undefined' && finalList.length > 0) {
+      try {
+        localStorage.setItem(CACHED_USERS_KEY, JSON.stringify(finalList));
+      } catch (e) {}
+    }
+
+    return finalList;
   }
 
   public async submitFeedback(data: {

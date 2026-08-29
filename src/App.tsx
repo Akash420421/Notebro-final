@@ -1161,6 +1161,7 @@ export default function App() {
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
         currentUser={currentUser}
+        totalNotesCount={notes.length}
       />
 
       {/* Secret Passcode Prompt Triggered by 10 Clicks on Logo */}
