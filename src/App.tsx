@@ -868,7 +868,7 @@ export default function App() {
         </header>
 
         {/* Scrollable Main Viewport */}
-        <main className={`flex-1 px-4 sm:px-6 py-4 sm:py-6 space-y-5 overflow-y-auto pb-24 ${activeTab === 'profile' ? 'bg-[#F5F5F7]' : 'bg-white'}`}>
+        <main className={`flex-1 px-4 sm:px-6 py-4 sm:py-6 space-y-5 overflow-y-auto pb-32 sm:pb-36 ${activeTab === 'profile' ? 'bg-[#F5F5F7]' : 'bg-white'}`}>
           {activeTab === 'home' && (
             <>
               {/* 1. Top Mode Switcher (Normal | Student | Developer | Build) */}
