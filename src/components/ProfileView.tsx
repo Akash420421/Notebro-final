@@ -41,6 +41,8 @@ interface ProfileViewProps {
   trashedNotes?: NoteItem[];
   currentUser?: AuthUser | null;
   selectedMode?: AppMode | 'all';
+  activeSheet?: 'appearance' | 'notifications' | 'storage' | 'sync' | null;
+  isEditProfileOpen?: boolean;
   onSelectMode?: (mode: AppMode | 'all') => void;
   onImportData?: (notes: NoteItem[]) => void;
   onUserLoggedOut?: () => void;
@@ -50,6 +52,10 @@ interface ProfileViewProps {
   onOpenFeedbackModal?: () => void;
   onOpenAdminModal?: () => void;
   onOpenInstallModal?: () => void;
+  onOpenSheet?: (sheet: 'appearance' | 'notifications' | 'storage' | 'sync') => void;
+  onCloseSheet?: () => void;
+  onOpenEditProfile?: () => void;
+  onCloseEditProfile?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -58,6 +64,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   trashedNotes = [],
   currentUser = null,
   selectedMode = 'normal',
+  activeSheet: propActiveSheet,
+  isEditProfileOpen: propIsEditProfileOpen,
   onSelectMode,
   onImportData,
   onUserLoggedOut,
@@ -67,6 +75,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenFeedbackModal,
   onOpenAdminModal,
   onOpenInstallModal,
+  onOpenSheet,
+  onCloseSheet,
+  onOpenEditProfile,
+  onCloseEditProfile,
 }) => {
   // Sync status
   const [syncStatus, setSyncStatus] = useState<SyncManagerStatus>(syncManager.getStatus());
@@ -82,6 +94,67 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [customBio, setCustomBio] = useState<string>(() => {
     return currentUser ? (localStorage.getItem('projectnotes_custom_bio') || '') : '';
   });
+
+  // Resolved identity data
+  const displayName = currentUser
+    ? (customName || currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Workspace Member'))
+    : 'Local Workspace';
+
+  const displayEmail = currentUser
+    ? (currentUser.email || 'User')
+    : 'Sign in to sync your notes';
+  const displayPhoto = currentUser ? (customPhotoURL || currentUser.photoURL || '') : '';
+  const initial = currentUser ? ((displayName.charAt(0) || 'U').toUpperCase()) : '';
+
+  // Edit Profile Form State
+  const [editNameInput, setEditNameInput] = useState('');
+  const [editPhotoInput, setEditPhotoInput] = useState('');
+  const [editBioInput, setEditBioInput] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [editProfileError, setEditProfileError] = useState<string | null>(null);
+
+  // Modals / Sheets (Controlled or Uncontrolled fallback)
+  const [localEditProfileOpen, setLocalEditProfileOpen] = useState(false);
+  const [localActiveSheet, setLocalActiveSheet] = useState<'appearance' | 'notifications' | 'storage' | 'sync' | null>(null);
+
+  const isEditProfileOpen = propIsEditProfileOpen !== undefined ? propIsEditProfileOpen : localEditProfileOpen;
+  const activeSheet = propActiveSheet !== undefined ? propActiveSheet : localActiveSheet;
+
+  const handleOpenSheet = (sheet: 'appearance' | 'notifications' | 'storage' | 'sync') => {
+    if (onOpenSheet) {
+      onOpenSheet(sheet);
+    } else {
+      setLocalActiveSheet(sheet);
+    }
+  };
+
+  const handleCloseSheet = () => {
+    if (onCloseSheet) {
+      onCloseSheet();
+    } else {
+      setLocalActiveSheet(null);
+    }
+  };
+
+  const handleOpenEditProfileDialog = () => {
+    setEditNameInput(displayName);
+    setEditPhotoInput(displayPhoto);
+    setEditBioInput(customBio);
+    setEditProfileError(null);
+    if (onOpenEditProfile) {
+      onOpenEditProfile();
+    } else {
+      setLocalEditProfileOpen(true);
+    }
+  };
+
+  const handleCloseEditProfileDialog = () => {
+    if (onCloseEditProfile) {
+      onCloseEditProfile();
+    } else {
+      setLocalEditProfileOpen(false);
+    }
+  };
 
   // Remote profile hydration on login / cleanup on logout
   useEffect(() => {
@@ -135,17 +208,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       });
     }
   }, [currentUser, notes.length]);
-
-  // Modals / Sheets
-  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
-  const [activeSheet, setActiveSheet] = useState<'appearance' | 'notifications' | 'storage' | 'sync' | null>(null);
-
-  // Edit Profile Form State
-  const [editNameInput, setEditNameInput] = useState('');
-  const [editPhotoInput, setEditPhotoInput] = useState('');
-  const [editBioInput, setEditBioInput] = useState('');
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [editProfileError, setEditProfileError] = useState<string | null>(null);
 
   // Appearance Theme State
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>(() => {
@@ -214,26 +276,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const checklistCount = notes.filter((n) => n.type === 'checklist').length;
   const pinnedCount = notes.filter((n) => n.isPinned).length;
 
-  // Resolved identity data
-  const displayName = currentUser
-    ? (customName || currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Workspace Member'))
-    : 'Local Workspace';
-
-  const displayEmail = currentUser
-    ? (currentUser.email || 'User')
-    : 'Sign in to sync your notes';
-  const displayPhoto = currentUser ? (customPhotoURL || currentUser.photoURL || '') : '';
-  const initial = currentUser ? ((displayName.charAt(0) || 'U').toUpperCase()) : '';
-
-  // 1. Handle Profile Editing
-  const handleOpenEditProfile = () => {
-    setEditNameInput(displayName);
-    setEditPhotoInput(displayPhoto);
-    setEditBioInput(customBio);
-    setEditProfileError(null);
-    setIsEditProfileOpen(true);
-  };
-
   const handleAvatarFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -288,7 +330,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         }
       }
 
-      setIsEditProfileOpen(false);
+      handleCloseEditProfileDialog();
       showToast('Profile updated successfully!', 'success');
     } catch (err: any) {
       setEditProfileError(err.message || 'Failed to save profile.');
@@ -383,7 +425,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (!currentUser) {
       if (onOpenAuthModal) onOpenAuthModal();
     } else {
-      setActiveSheet('sync');
+      handleOpenSheet('sync');
     }
   };
 
@@ -548,7 +590,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {/* 56px circular avatar with click to edit */}
             <button
               type="button"
-              onClick={currentUser ? handleOpenEditProfile : onOpenAuthModal}
+              onClick={currentUser ? handleOpenEditProfileDialog : onOpenAuthModal}
               title={currentUser ? "Click to edit profile & avatar" : "Click to Sign In"}
               className={`relative w-14 h-14 rounded-full ${currentUser ? 'bg-[#111827] text-white' : 'bg-[#F3F4F6] text-[#6B7280]'} flex items-center justify-center text-xl font-semibold shrink-0 select-none overflow-hidden group cursor-pointer border border-[#E5E7EB]`}
             >
@@ -588,7 +630,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <button
               type="button"
               id="profile-edit-name-btn"
-              onClick={handleOpenEditProfile}
+              onClick={handleOpenEditProfileDialog}
               className="px-3 py-1 text-xs font-medium text-[#111827] border border-[#E5E7EB] rounded-lg hover:bg-[#F5F5F7] transition cursor-pointer shrink-0 inline-flex items-center gap-1"
             >
               <Edit2 className="w-3 h-3 text-[#6B7280]" />
@@ -861,7 +903,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <button
             type="button"
             id="profile-notifications-btn"
-            onClick={() => setActiveSheet('notifications')}
+            onClick={() => handleOpenSheet('notifications')}
             className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#F9FAFB] transition cursor-pointer group"
           >
             <div className="text-[14px] font-medium text-[#111827]">
@@ -879,7 +921,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <button
             type="button"
             id="profile-storage-btn"
-            onClick={() => setActiveSheet('storage')}
+            onClick={() => handleOpenSheet('storage')}
             className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[#F9FAFB] transition cursor-pointer group"
           >
             <div className="text-[14px] font-medium text-[#111827]">
@@ -923,7 +965,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 Edit Profile
               </h4>
               <button
-                onClick={() => setIsEditProfileOpen(false)}
+                onClick={handleCloseEditProfileDialog}
                 className="text-[#9CA3AF] hover:text-[#111827] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1018,7 +1060,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <button
                   type="button"
                   disabled={isSavingProfile}
-                  onClick={() => setIsEditProfileOpen(false)}
+                  onClick={handleCloseEditProfileDialog}
                   className="px-3.5 py-2 rounded-xl border border-[#E5E7EB] text-xs font-medium text-[#6B7280] hover:bg-[#F5F5F7] transition cursor-pointer"
                 >
                   Cancel
@@ -1047,7 +1089,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 Appearance &amp; Theme
               </h4>
               <button
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="text-[#9CA3AF] hover:text-[#111827] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1111,7 +1153,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex justify-end pt-2">
               <button
                 type="button"
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="px-4 py-1.5 rounded-xl bg-[#111827] text-white text-xs font-medium hover:bg-black cursor-pointer"
               >
                 Done
@@ -1132,7 +1174,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 Notification Settings
               </h4>
               <button
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="text-[#9CA3AF] hover:text-[#111827] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1233,7 +1275,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex justify-end pt-2">
               <button
                 type="button"
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="px-4 py-1.5 rounded-xl bg-[#111827] text-white text-xs font-medium hover:bg-black cursor-pointer"
               >
                 Done
@@ -1255,7 +1297,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span>Storage &amp; Usage Diagnostics</span>
               </h4>
               <button
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="text-[#9CA3AF] hover:text-[#111827] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1297,7 +1339,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex justify-end pt-2">
               <button
                 type="button"
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="px-4 py-1.5 rounded-xl bg-[#111827] text-white text-xs font-medium hover:bg-black cursor-pointer"
               >
                 Done
@@ -1319,7 +1361,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <span>Supabase Cloud Synchronization</span>
               </h4>
               <button
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="text-[#9CA3AF] hover:text-[#111827] p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -1364,7 +1406,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => setActiveSheet(null)}
+                onClick={handleCloseSheet}
                 className="px-4 py-1.5 rounded-xl bg-[#111827] text-white text-xs font-medium hover:bg-black cursor-pointer"
               >
                 Done

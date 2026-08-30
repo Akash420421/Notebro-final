@@ -610,6 +610,23 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
     isPinned,
   ]);
 
+  const buildCurrentNoteObjectRef = useRef(buildCurrentNoteObject);
+  buildCurrentNoteObjectRef.current = buildCurrentNoteObject;
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      const noteToPersist = buildCurrentNoteObjectRef.current();
+      if (noteToPersist) {
+        onSaveRef.current(noteToPersist);
+      }
+    };
+  }, []);
+
   const handleBack = () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);

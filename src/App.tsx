@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { AppMode, NoteItem, FolderItem, ProjectItem, AppBranding, AuthUser } from './types';
 import { dbService } from './services/db';
 import { localStore, DEFAULT_FOLDERS } from './services/localStore';
@@ -7,6 +7,7 @@ import { firestoreSyncService } from './services/firestoreSync';
 import { StorageProtectionBanner } from './components/StorageProtectionBanner';
 import { AkNotesFileStructure } from './services/fileBackupService';
 import { adminService } from './services/adminService';
+import { AppNavState, initHistoryState, pushNavState, popNav } from './services/navigation';
 import { ADS_SLIDES } from './data/sampleData';
 import { ModeSelector } from './components/ModeSelector';
 import { SearchBar } from './components/SearchBar';
@@ -124,7 +125,7 @@ export default function App() {
 
     if (logoClickCountRef.current >= 10) {
       logoClickCountRef.current = 0;
-      setIsSecretPromptOpen(true);
+      navigateModal('secret-prompt');
       return;
     }
 
@@ -147,9 +148,171 @@ export default function App() {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<ProjectItem | null>(null);
 
+  // Profile Sub-sheets & Edit modal for browser back history
+  const [activeProfileSheet, setActiveProfileSheet] = useState<'appearance' | 'notifications' | 'storage' | 'sync' | null>(null);
+  const [isProfileEditOpen, setIsProfileEditOpen] = useState(false);
+
   // Multi-select state
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+
+  // Keep live references for popstate reconstruction
+  const notesRef = useRef<NoteItem[]>(notes);
+  notesRef.current = notes;
+  const projectsRef = useRef<ProjectItem[]>(projects);
+  projectsRef.current = projects;
+
+  // Apply SPA Navigation State from popstate / history stack
+  const applyNavState = useCallback((state: AppNavState) => {
+    // 1. Modals
+    setIsTrashModalOpen(state.view === 'trash');
+    setIsAdminModalOpen(state.view === 'admin');
+    setIsFeedbackModalOpen(state.view === 'feedback');
+    setIsBackupModalOpen(state.view === 'backup');
+    setIsNotesFileModalOpen(state.view === 'aknotes');
+    setIsAuthModalOpen(state.view === 'auth');
+    setIsNewProjectModalOpen(state.view === 'new-project');
+    setIsSecretPromptOpen(state.view === 'secret-prompt');
+    setIsInstallModalOpen(state.view === 'install');
+
+    // 2. Profile Sheets & Edit Modal
+    if (state.view === 'profile-sheet') {
+      setActiveTab('profile');
+      setActiveProfileSheet(state.sheet || null);
+      setIsProfileEditOpen(false);
+    } else if (state.view === 'profile-edit') {
+      setActiveTab('profile');
+      setActiveProfileSheet(null);
+      setIsProfileEditOpen(true);
+    } else {
+      setActiveProfileSheet(null);
+      setIsProfileEditOpen(false);
+    }
+
+    // 3. Tab State
+    if (state.tab) {
+      setActiveTab(state.tab);
+    } else if (state.view === 'home' || state.view === 'projects' || state.view === 'profile') {
+      setActiveTab(state.view);
+    }
+
+    // 4. Project Detail View
+    if (state.view === 'project' && state.projectId) {
+      const targetProject = projectsRef.current.find((p) => p.id === state.projectId);
+      if (targetProject) {
+        setSelectedProject(targetProject);
+      }
+      setEditingNote(null);
+      setIsCreatingNewNote(false);
+    } else if (state.view !== 'note' || !state.fromProjectId) {
+      if (state.view === 'home' || state.view === 'projects' || state.view === 'profile') {
+        setSelectedProject(null);
+      }
+    }
+
+    // 5. Note Editor View
+    if (state.view === 'note') {
+      if (state.fromProjectId) {
+        const proj = projectsRef.current.find((p) => p.id === state.fromProjectId);
+        if (proj) setSelectedProject(proj);
+      }
+      if (state.noteId) {
+        const targetNote = notesRef.current.find((n) => n.id === state.noteId);
+        if (targetNote) {
+          setEditingNote(targetNote);
+          setIsCreatingNewNote(false);
+        }
+      } else if (state.isNewNote) {
+        setEditingNote(null);
+        setIsCreatingNewNote(true);
+        setNewNoteInitialType(state.noteInitialType || 'text');
+      }
+    } else {
+      setEditingNote(null);
+      setIsCreatingNewNote(false);
+    }
+  }, []);
+
+  // History & Android Back Button PopState Listener
+  useEffect(() => {
+    const initialNav = initHistoryState();
+    applyNavState(initialNav);
+
+    const handlePopState = (e: PopStateEvent) => {
+      const state = e.state as AppNavState | null;
+      if (state && state.notebro) {
+        applyNavState(state);
+      } else {
+        applyNavState({ notebro: true, view: 'home', tab: 'home' });
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [applyNavState]);
+
+  // Navigation dispatchers
+  const navigateTab = (tab: ActiveTab) => {
+    pushNavState({ view: tab, tab });
+    setSelectedProject(null);
+    setEditingNote(null);
+    setIsCreatingNewNote(false);
+    setActiveTab(tab);
+  };
+
+  const navigateOpenProject = (project: ProjectItem) => {
+    pushNavState({ view: 'project', projectId: project.id, tab: activeTab });
+    setSelectedProject(project);
+  };
+
+  const navigateOpenNote = (note: NoteItem, fromProjId?: string) => {
+    pushNavState({
+      view: 'note',
+      noteId: note.id,
+      fromProjectId: fromProjId || selectedProject?.id || note.projectId,
+      tab: activeTab,
+    });
+    setEditingNote(note);
+    setIsCreatingNewNote(false);
+  };
+
+  const navigateNewNote = (type: 'text' | 'checklist' | 'sketch' = 'text', fromProjId?: string) => {
+    pushNavState({
+      view: 'note',
+      isNewNote: true,
+      noteInitialType: type,
+      fromProjectId: fromProjId || selectedProject?.id,
+      tab: activeTab,
+    });
+    setNewNoteInitialType(type);
+    setEditingNote(null);
+    setIsCreatingNewNote(true);
+  };
+
+  const navigateProfileSheet = (sheet: 'appearance' | 'notifications' | 'storage' | 'sync') => {
+    pushNavState({ view: 'profile-sheet', sheet, tab: 'profile' });
+    setActiveProfileSheet(sheet);
+  };
+
+  const navigateProfileEdit = () => {
+    pushNavState({ view: 'profile-edit', tab: 'profile' });
+    setIsProfileEditOpen(true);
+  };
+
+  const navigateModal = (view: 'trash' | 'admin' | 'feedback' | 'backup' | 'aknotes' | 'auth' | 'new-project' | 'secret-prompt' | 'install') => {
+    pushNavState({ view, tab: activeTab, projectId: selectedProject?.id });
+    if (view === 'trash') setIsTrashModalOpen(true);
+    if (view === 'admin') setIsAdminModalOpen(true);
+    if (view === 'feedback') setIsFeedbackModalOpen(true);
+    if (view === 'backup') setIsBackupModalOpen(true);
+    if (view === 'aknotes') setIsNotesFileModalOpen(true);
+    if (view === 'auth') setIsAuthModalOpen(true);
+    if (view === 'new-project') setIsNewProjectModalOpen(true);
+    if (view === 'secret-prompt') setIsSecretPromptOpen(true);
+    if (view === 'install') setIsInstallModalOpen(true);
+  };
 
   // Undo deletion snackbar state
   const [undoState, setUndoState] = useState<{
@@ -883,7 +1046,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F2F4F7] text-neutral-900 flex flex-col items-center justify-start antialiased py-0 sm:py-6 selection:bg-neutral-900 selection:text-white">
       {/* RISK 2/3/4: Storage Persistence, Incognito, Low Space, Write Error Banners */}
-      <StorageProtectionBanner onOpenBackupModal={() => setIsBackupModalOpen(true)} />
+      <StorageProtectionBanner onOpenBackupModal={() => navigateModal('backup')} />
 
       {/* Viewport Container */}
       <div
@@ -931,7 +1094,7 @@ export default function App() {
               <button
                 type="button"
                 id="header-install-app-btn"
-                onClick={() => setIsInstallModalOpen(true)}
+                onClick={() => navigateModal('install')}
                 className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl sm:rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1.5 transition cursor-pointer border border-slate-200 shrink-0 active:scale-95 text-xs font-bold"
                 title="Install Note Bro App (Full Screen Native Mode)"
               >
@@ -944,7 +1107,7 @@ export default function App() {
             <button
               type="button"
               id="header-profile-btn"
-              onClick={() => setActiveTab('profile')}
+              onClick={() => navigateTab('profile')}
               className="w-9 h-9 rounded-full bg-[#F3F4F6] hover:bg-[#E5E7EB] text-[#111827] flex items-center justify-center transition cursor-pointer border border-[#E5E7EB] shrink-0 active:scale-95 overflow-hidden"
               title="Open Profile & Cloud Sync"
             >
@@ -977,11 +1140,11 @@ export default function App() {
               project={selectedProject}
               notes={notes}
               folders={folders}
-              onBack={() => setSelectedProject(null)}
+              onBack={() => popNav(() => setSelectedProject(null))}
               onUpdateProject={handleUpdateProject}
               onDeleteProject={handleDeleteProjectFromDetail}
-              onOpenNote={(note) => setEditingNote(note)}
-              onCreateNote={handleCreateNoteInProject}
+              onOpenNote={(note) => navigateOpenNote(note, selectedProject.id)}
+              onCreateNote={(projId) => navigateNewNote('text', projId)}
               onSaveNote={handleSaveNote}
               onDeleteNote={handleDeleteNote}
               onDuplicateProject={handleDuplicateProject}
@@ -1014,22 +1177,13 @@ export default function App() {
                   {/* Quick Actions (Adapted directly in Light Theme from requested UI) */}
                   <section id="quick-actions-section">
                     <QuickActions
-                      onNewNote={() => {
-                        setNewNoteInitialType('text');
-                        setIsCreatingNewNote(true);
-                      }}
-                      onNewProject={() => {
-                        setIsNewProjectModalOpen(true);
-                      }}
+                      onNewNote={() => navigateNewNote('text')}
+                      onNewProject={() => navigateModal('new-project')}
                       onNewTag={(newTagName) => {
                         setSelectedTag(newTagName);
                       }}
-                      onImport={() => {
-                        setIsNotesFileModalOpen(true);
-                      }}
-                      onViewAll={() => {
-                        setActiveTab('projects');
-                      }}
+                      onImport={() => navigateModal('aknotes')}
+                      onViewAll={() => navigateTab('projects')}
                     />
                   </section>
 
@@ -1078,7 +1232,7 @@ export default function App() {
                         folders={folders}
                         isMultiSelectMode={isMultiSelectMode}
                         selectedNoteIds={selectedNoteIds}
-                        onSelectNote={(note) => setEditingNote(note)}
+                        onSelectNote={(note) => navigateOpenNote(note)}
                         onToggleSelectNote={handleToggleSelectNote}
                         onDeleteNote={handleDeleteNote}
                         onToggleArchiveNote={handleToggleArchiveNote}
@@ -1095,10 +1249,7 @@ export default function App() {
                           setSelectedTag(null);
                           setSelectedFolderId('all');
                         }}
-                        onCreateNote={(type) => {
-                          setNewNoteInitialType(type);
-                          setIsCreatingNewNote(true);
-                        }}
+                        onCreateNote={(type) => navigateNewNote(type)}
                       />
                     )}
                   </section>
@@ -1116,7 +1267,7 @@ export default function App() {
                       </p>
                     </div>
                     <button
-                      onClick={() => setIsNewProjectModalOpen(true)}
+                      onClick={() => navigateModal('new-project')}
                       className="px-3 py-1.5 bg-neutral-900 text-white rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -1127,7 +1278,7 @@ export default function App() {
                   {/* Old Projects in Workspace */}
                   <OldProjectsList
                     projects={projects}
-                    onSelectProject={(p) => setSelectedProject(p)}
+                    onSelectProject={(p) => navigateOpenProject(p)}
                     onDeleteProject={handleDeleteProject}
                     onTogglePin={handleTogglePinProject}
                   />
@@ -1140,7 +1291,7 @@ export default function App() {
                       folders={folders}
                       isMultiSelectMode={isMultiSelectMode}
                       selectedNoteIds={selectedNoteIds}
-                      onSelectNote={(note) => setEditingNote(note)}
+                      onSelectNote={(note) => navigateOpenNote(note)}
                       onToggleSelectNote={handleToggleSelectNote}
                       onDeleteNote={handleDeleteNote}
                       onToggleArchiveNote={handleToggleArchiveNote}
@@ -1168,12 +1319,18 @@ export default function App() {
                     setFolders([]);
                     setProjects([]);
                   }}
-                  onOpenAuthModal={() => setIsAuthModalOpen(true)}
-                  onOpenNotesFileModal={() => setIsNotesFileModalOpen(true)}
-                  onOpenTrashModal={() => setIsTrashModalOpen(true)}
-                  onOpenFeedbackModal={() => setIsFeedbackModalOpen(true)}
-                  onOpenAdminModal={() => setIsAdminModalOpen(true)}
-                  onOpenInstallModal={() => setIsInstallModalOpen(true)}
+                  activeSheet={activeProfileSheet}
+                  isEditProfileOpen={isProfileEditOpen}
+                  onOpenSheet={navigateProfileSheet}
+                  onCloseSheet={() => popNav(() => setActiveProfileSheet(null))}
+                  onOpenEditProfile={navigateProfileEdit}
+                  onCloseEditProfile={() => popNav(() => setIsProfileEditOpen(false))}
+                  onOpenAuthModal={() => navigateModal('auth')}
+                  onOpenNotesFileModal={() => navigateModal('aknotes')}
+                  onOpenTrashModal={() => navigateModal('trash')}
+                  onOpenFeedbackModal={() => navigateModal('feedback')}
+                  onOpenAdminModal={() => navigateModal('admin')}
+                  onOpenInstallModal={() => navigateModal('install')}
                 />
               )}
             </>
@@ -1183,10 +1340,7 @@ export default function App() {
         {/* Floating Action Button (Warm Golden-Amber MIUI/Android '+' Button) */}
         {!isMultiSelectMode && !editingNote && !isCreatingNewNote && !selectedProject && activeTab === 'home' && (
           <FloatingActionButton
-            onCreateNote={(type) => {
-              setNewNoteInitialType(type);
-              setIsCreatingNewNote(true);
-            }}
+            onCreateNote={(type) => navigateNewNote(type)}
           />
         )}
 
@@ -1219,10 +1373,7 @@ export default function App() {
             <div className="w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl pointer-events-auto">
               <BottomNav
                 activeTab={activeTab}
-                onTabChange={(tab) => {
-                  setSelectedProject(null);
-                  setActiveTab(tab);
-                }}
+                onTabChange={(tab) => navigateTab(tab)}
                 notesCount={activeNotes.length}
                 projectsCount={projects.length}
               />
@@ -1234,7 +1385,7 @@ export default function App() {
       {/* New Project Creation Modal */}
       <CreateProjectModal
         isOpen={isNewProjectModalOpen}
-        onClose={() => setIsNewProjectModalOpen(false)}
+        onClose={() => popNav(() => setIsNewProjectModalOpen(false))}
         onSave={handleSaveProject}
         initialMode={selectedMode === 'all' ? 'normal' : selectedMode}
       />
@@ -1249,10 +1400,10 @@ export default function App() {
           currentFolderId={selectedFolderId}
           currentProjectId={editingNote?.projectId || selectedProject?.id}
           currentMode={selectedMode === 'all' ? 'normal' : selectedMode}
-          onClose={() => {
+          onClose={() => popNav(() => {
             setEditingNote(null);
             setIsCreatingNewNote(false);
-          }}
+          })}
           onSave={handleSaveNote}
           onDelete={handleDeleteNote}
           onCreateFolder={handleCreateFolder}
@@ -1262,7 +1413,7 @@ export default function App() {
       {/* Auth Modal (Account Login / Signup) */}
       <AuthModal
         isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+        onClose={() => popNav(() => setIsAuthModalOpen(false))}
         currentUser={currentUser}
         onUserLoggedOut={() => {
           setNotes([]);
@@ -1273,7 +1424,7 @@ export default function App() {
       {/* .aknotes Offline File Management Modal */}
       <NotesFileModal
         isOpen={isNotesFileModalOpen}
-        onClose={() => setIsNotesFileModalOpen(false)}
+        onClose={() => popNav(() => setIsNotesFileModalOpen(false))}
         notes={notes}
         folders={folders}
         projects={projects}
@@ -1284,7 +1435,7 @@ export default function App() {
       {/* Trash & 30-Day Recycle Bin Modal */}
       <TrashModal
         isOpen={isTrashModalOpen}
-        onClose={() => setIsTrashModalOpen(false)}
+        onClose={() => popNav(() => setIsTrashModalOpen(false))}
         trashedNotes={trashedNotes}
         onRestoreNote={handleRestoreNote}
         onPermanentDeleteNote={handlePermanentDeleteNote}
@@ -1295,14 +1446,14 @@ export default function App() {
       {/* Feedback / Bug & Idea Submission Modal */}
       <FeedbackModal
         isOpen={isFeedbackModalOpen}
-        onClose={() => setIsFeedbackModalOpen(false)}
+        onClose={() => popNav(() => setIsFeedbackModalOpen(false))}
         currentUser={currentUser}
       />
 
       {/* Admin Control Console Modal */}
       <AdminPanelModal
         isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
+        onClose={() => popNav(() => setIsAdminModalOpen(false))}
         currentUser={currentUser}
         totalNotesCount={notes.length}
       />
@@ -1310,14 +1461,14 @@ export default function App() {
       {/* Secret Passcode Prompt Triggered by 10 Clicks on Logo */}
       <SecretAdminAccessModal
         isOpen={isSecretPromptOpen}
-        onClose={() => setIsSecretPromptOpen(false)}
-        onSuccessUnlock={() => setIsAdminModalOpen(true)}
+        onClose={() => popNav(() => setIsSecretPromptOpen(false))}
+        onSuccessUnlock={() => navigateModal('admin')}
       />
 
       {/* PWA Direct Installation & Full-Screen Guide Modal */}
       <PWAInstallModal
         isOpen={isInstallModalOpen}
-        onClose={() => setIsInstallModalOpen(false)}
+        onClose={() => popNav(() => setIsInstallModalOpen(false))}
         deferredPrompt={deferredPrompt}
         onInstalled={() => {
           setIsStandalone(true);
@@ -1327,7 +1478,7 @@ export default function App() {
       {/* Zero Data Loss & Storage Backup/Restore Modal */}
       <BackupRestoreModal
         isOpen={isBackupModalOpen}
-        onClose={() => setIsBackupModalOpen(false)}
+        onClose={() => popNav(() => setIsBackupModalOpen(false))}
         onDataRestored={async () => {
           const freshNotes = await dbService.getAllNotes();
           const freshFolders = await dbService.getAllFolders();
