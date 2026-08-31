@@ -136,6 +136,9 @@ class SyncManagerService {
         if (!error && Array.isArray(remoteData) && remoteData.length > 0) {
           for (const item of remoteData) {
             const rawNote = item.note_data ? item.note_data : item;
+            const isDel = Boolean(item.is_deleted || rawNote.isDeleted || rawNote.is_deleted);
+            const delAt = item.deleted_at ? new Date(item.deleted_at).getTime() : (rawNote.deletedAt || rawNote.deleted_at);
+
             const remoteNote: NoteItem = {
               id: item.id || rawNote.id,
               userId: userId,
@@ -160,8 +163,8 @@ class SyncManagerService {
               tags: rawNote.tags || [],
               isPinned: !!rawNote.isPinned,
               isArchived: !!rawNote.isArchived,
-              isDeleted: !!rawNote.isDeleted,
-              deletedAt: rawNote.deletedAt,
+              isDeleted: isDel,
+              deletedAt: isDel ? (delAt || Date.now()) : undefined,
               color: rawNote.color,
               mode: rawNote.mode || 'normal',
               createdAt: rawNote.createdAt || Date.now(),
@@ -170,9 +173,45 @@ class SyncManagerService {
             };
 
             const local = localMap.get(remoteNote.id);
-            if (!local || (remoteNote.updatedAt || 0) >= (local.updatedAt || 0)) {
+            if (!local) {
               localMap.set(remoteNote.id, remoteNote);
               await localStore.saveNote(remoteNote);
+            } else {
+              const localIsDeleted = Boolean(local.isDeleted || local.deletedAt);
+              const remoteIsDeleted = Boolean(remoteNote.isDeleted || remoteNote.deletedAt);
+
+              if (localIsDeleted && !remoteIsDeleted) {
+                // Local was soft-deleted to 30-day trash. Preserve deletion unless remote is genuinely newer
+                const localDeleteTime = local.deletedAt || local.updatedAt || 0;
+                const remoteUpdateTime = remoteNote.updatedAt || 0;
+                if (remoteUpdateTime <= localDeleteTime) {
+                  const preserved: NoteItem = {
+                    ...remoteNote,
+                    isDeleted: true,
+                    deletedAt: local.deletedAt || Date.now(),
+                    updatedAt: Math.max(local.updatedAt || 0, remoteNote.updatedAt || 0),
+                    syncStatus: 'pending',
+                  };
+                  localMap.set(remoteNote.id, preserved);
+                  await localStore.saveNote(preserved);
+                } else {
+                  localMap.set(remoteNote.id, remoteNote);
+                  await localStore.saveNote(remoteNote);
+                }
+              } else if (remoteIsDeleted && !localIsDeleted) {
+                const merged: NoteItem = {
+                  ...local,
+                  ...remoteNote,
+                  isDeleted: true,
+                  deletedAt: remoteNote.deletedAt || Date.now(),
+                  syncStatus: 'synced',
+                };
+                localMap.set(remoteNote.id, merged);
+                await localStore.saveNote(merged);
+              } else if ((remoteNote.updatedAt || 0) >= (local.updatedAt || 0)) {
+                localMap.set(remoteNote.id, remoteNote);
+                await localStore.saveNote(remoteNote);
+              }
             }
           }
         }
@@ -190,11 +229,52 @@ class SyncManagerService {
             
             if (Array.isArray(sNotes) && sNotes.length > 0) {
               for (const n of sNotes) {
+                const sIsDeleted = Boolean(n.isDeleted || n.deletedAt);
+                const mergedN: NoteItem = {
+                  ...n,
+                  isDeleted: sIsDeleted,
+                  deletedAt: sIsDeleted ? (n.deletedAt || Date.now()) : undefined,
+                  userId,
+                  user_id: userId,
+                  syncStatus: 'synced',
+                };
                 const existing = localMap.get(n.id);
-                if (!existing || ((n.updatedAt || 0) >= (existing.updatedAt || 0))) {
-                  const mergedN: NoteItem = { ...n, userId, user_id: userId, syncStatus: 'synced' };
+                if (!existing) {
                   localMap.set(n.id, mergedN);
                   await localStore.saveNote(mergedN);
+                } else {
+                  const existingIsDeleted = Boolean(existing.isDeleted || existing.deletedAt);
+                  if (existingIsDeleted && !sIsDeleted) {
+                    const localDeleteTime = existing.deletedAt || existing.updatedAt || 0;
+                    const sUpdateTime = n.updatedAt || 0;
+                    if (sUpdateTime <= localDeleteTime) {
+                      const preserved: NoteItem = {
+                        ...mergedN,
+                        isDeleted: true,
+                        deletedAt: existing.deletedAt || Date.now(),
+                        updatedAt: Math.max(existing.updatedAt || 0, n.updatedAt || 0),
+                        syncStatus: 'pending',
+                      };
+                      localMap.set(n.id, preserved);
+                      await localStore.saveNote(preserved);
+                    } else {
+                      localMap.set(n.id, mergedN);
+                      await localStore.saveNote(mergedN);
+                    }
+                  } else if (sIsDeleted && !existingIsDeleted) {
+                    const merged: NoteItem = {
+                      ...existing,
+                      ...mergedN,
+                      isDeleted: true,
+                      deletedAt: n.deletedAt || Date.now(),
+                      syncStatus: 'synced',
+                    };
+                    localMap.set(n.id, merged);
+                    await localStore.saveNote(merged);
+                  } else if ((n.updatedAt || 0) >= (existing.updatedAt || 0)) {
+                    localMap.set(n.id, mergedN);
+                    await localStore.saveNote(mergedN);
+                  }
                 }
               }
             }

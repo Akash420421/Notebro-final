@@ -933,23 +933,11 @@ ${cleanNoteContext ? `\nActive Note Context for Reference (use only if relevant)
       const { notes, folders, projects, studentDoubtSessions, developerSessions } = req.body;
       const existing = userDataBundlesStore.get(cleanId);
 
-      const notesMap = new Map<string, any>();
-      if (existing?.notes) existing.notes.forEach((n) => notesMap.set(n.id, n));
-      if (Array.isArray(notes)) notes.forEach((n) => notesMap.set(n.id, n));
-
-      const foldersMap = new Map<string, any>();
-      if (existing?.folders) existing.folders.forEach((f) => foldersMap.set(f.id, f));
-      if (Array.isArray(folders)) folders.forEach((f) => foldersMap.set(f.id, f));
-
-      const projectsMap = new Map<string, any>();
-      if (existing?.projects) existing.projects.forEach((p) => projectsMap.set(p.id, p));
-      if (Array.isArray(projects)) projects.forEach((p) => projectsMap.set(p.id, p));
-
       const updatedBundle = {
         userId: cleanId,
-        notes: Array.from(notesMap.values()),
-        folders: Array.from(foldersMap.values()),
-        projects: Array.from(projectsMap.values()),
+        notes: Array.isArray(notes) ? notes : existing?.notes || [],
+        folders: Array.isArray(folders) ? folders : existing?.folders || [],
+        projects: Array.isArray(projects) ? projects : existing?.projects || [],
         studentDoubtSessions: Array.isArray(studentDoubtSessions) ? studentDoubtSessions : existing?.studentDoubtSessions || [],
         developerSessions: Array.isArray(developerSessions) ? developerSessions : existing?.developerSessions || [],
         updatedAt: Date.now(),

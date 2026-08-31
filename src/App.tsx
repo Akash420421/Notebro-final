@@ -1050,10 +1050,10 @@ export default function App() {
 
       {/* Viewport Container */}
       <div
-        className={`w-full bg-white flex flex-col justify-between shadow-xl transition-all duration-300 relative min-h-[100dvh] ${
+        className={`w-full bg-white flex flex-col justify-between shadow-xl transition-all duration-300 relative min-h-screen ${
           isMobileFrame
-            ? 'max-w-[420px] min-h-[850px] rounded-[44px] border-[12px] border-neutral-900 ring-8 ring-neutral-200/80 my-2 overflow-hidden'
-            : 'w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl min-h-[100dvh] sm:min-h-[880px] sm:my-3 sm:rounded-3xl sm:border sm:border-neutral-200/90 sm:shadow-2xl overflow-hidden'
+            ? 'max-w-[420px] rounded-[44px] border-[12px] border-neutral-900 ring-8 ring-neutral-200/80 my-2 overflow-hidden'
+            : 'w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl sm:my-3 sm:rounded-3xl sm:border sm:border-neutral-200/90 sm:shadow-2xl'
         }`}
       >
         {/* Clean iOS / Linear Top Header */}
@@ -1133,8 +1133,8 @@ export default function App() {
           </div>
         </header>
 
-        {/* Scrollable Main Viewport */}
-        <main className={`flex-1 px-4 sm:px-6 py-4 sm:py-6 space-y-5 overflow-y-auto smooth-scroll overscroll-contain pb-32 sm:pb-36 ${activeTab === 'profile' ? 'bg-[#F5F5F7]' : 'bg-white'}`}>
+        {/* Main Viewport */}
+        <main className={`w-full flex-1 px-4 sm:px-6 py-4 sm:py-6 space-y-5 pb-32 sm:pb-36 ${activeTab === 'profile' ? 'bg-[#F5F5F7]' : 'bg-white'}`}>
           {selectedProject ? (
             <ProjectDetailView
               project={selectedProject}
